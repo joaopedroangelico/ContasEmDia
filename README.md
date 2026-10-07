@@ -18,7 +18,7 @@ App Android para cadastrar e acompanhar dívidas: cartão de crédito, contas me
 - **Lembretes**: notificação diária às 9h para dívidas que vencem no dia ou em 1, 3, 5 ou 7 dias, e para as vencidas.
 - **Temas**: Sistema, Lavanda, Menta, Pêssego, Oceano e Rosé. Todos seguem o modo claro/escuro do celular.
 
-Os dados ficam só no celular (banco local Room); o app não usa internet.
+**Privacidade:** os dados ficam só no celular (banco local Room). O app não tem permissão de internet, não compartilha nada com ninguém e fica fora do backup na nuvem. Veja a [Política de Privacidade](PRIVACIDADE.md).
 
 ## Tecnologias
 

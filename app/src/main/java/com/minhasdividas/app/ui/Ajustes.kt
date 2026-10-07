@@ -61,6 +61,10 @@ import com.minhasdividas.app.R
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.PaddingValues
+import com.minhasdividas.app.ui.theme.sucesso
 import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.Tema
 import com.minhasdividas.app.lembretes.Lembretes
@@ -184,8 +188,118 @@ fun FolhaAjustes(
             }
 
             HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            SecaoPrivacidade()
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
             SecaoSobre()
         }
+    }
+}
+
+/**
+ * Resumo da política de privacidade (texto completo em PRIVACIDADE.md no repositório).
+ * Cada frase aqui precisa continuar verdadeira: o app não tem permissão de internet e
+ * os dados ficam fora do backup na nuvem (res/xml/regras_*.xml).
+ */
+@Composable
+private fun SecaoPrivacidade() {
+    val cores = MaterialTheme.colorScheme
+    var completa by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Lock, contentDescription = null, tint = cores.sucesso, modifier = Modifier.size(20.dp))
+            Text("Privacidade", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 8.dp))
+        }
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(cores.sucesso.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                .padding(14.dp),
+        ) {
+            ItemPrivacidade("Seus dados ficam apenas neste celular.")
+            ItemPrivacidade("Nada é enviado ou compartilhado com ninguém, nem com o desenvolvedor.")
+            ItemPrivacidade("O app não tem acesso à internet, anúncios ou rastreamento.")
+            ItemPrivacidade("Sem cadastro, login ou coleta de dados pessoais.")
+        }
+        TextButton(onClick = { completa = true }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+            Text("Ler política de privacidade completa")
+        }
+    }
+    if (completa) {
+        AlertDialog(
+            onDismissRequest = { completa = false },
+            icon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+            title = { Text("Política de privacidade") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    TopicoPolitica(
+                        "O que fica guardado",
+                        "Somente o que você digita: dívidas, valores a receber, salário (se informado) e " +
+                            "preferências. Tudo fica armazenado localmente, neste aparelho. O app não acessa nome, " +
+                            "e-mail, contatos, localização, fotos ou dados bancários.",
+                    )
+                    TopicoPolitica(
+                        "Nada sai do celular",
+                        "O app não tem permissão de acesso à internet, então o próprio Android impede o envio de " +
+                            "qualquer informação. Não há anúncios, estatísticas de uso nem serviços de terceiros. " +
+                            "O desenvolvedor não tem acesso aos seus dados.",
+                    )
+                    TopicoPolitica(
+                        "Backup e troca de celular",
+                        "Os dados não entram no backup automático na nuvem. No Android 12 ou superior, uma " +
+                            "transferência direta entre aparelhos feita por você pode levar os dados para o novo celular.",
+                    )
+                    TopicoPolitica(
+                        "Permissões",
+                        "Notificações, para os lembretes de vencimento. As demais (iniciar com o aparelho, manter " +
+                            "ativo e estado da rede) são usadas apenas pelo agendador de lembretes do Android.",
+                    )
+                    TopicoPolitica(
+                        "Apagar seus dados",
+                        "Exclua itens dentro do app, ou desinstale/limpe os dados do app nas configurações do Android. " +
+                            "Como não existe cópia fora do aparelho, dados apagados não podem ser recuperados.",
+                    )
+                    TopicoPolitica(
+                        "LGPD",
+                        "Como o app não coleta nem transmite dados pessoais, não há tratamento de dados pelo " +
+                            "desenvolvedor (Lei nº 13.709/2018).",
+                    )
+                    Text(
+                        "Última atualização: 7 de outubro de 2026",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cores.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { completa = false }) { Text("Entendi") } },
+        )
+    }
+}
+
+@Composable
+private fun ItemPrivacidade(texto: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(
+            Icons.Rounded.Check,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.sucesso,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(16.dp),
+        )
+        Text(texto, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
+    }
+}
+
+@Composable
+private fun TopicoPolitica(titulo: String, texto: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(titulo, style = MaterialTheme.typography.titleSmall)
+        Text(texto, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
