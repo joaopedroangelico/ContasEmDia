@@ -40,3 +40,7 @@ Pré-requisitos: JDK 17+ e Android SDK (caminho em `local.properties`).
 ```
 
 A versão release é assinada com a chave em `keystore/` e as senhas ficam em `keystore.properties`. **Guarde esses dois arquivos com cuidado**: sem eles não é possível publicar atualizações que instalem por cima da versão atual. Ambos estão no `.gitignore`.
+
+## Auxiliar
+
+Código testado e instalado no smartphone pela própria IA do Claude. 
