@@ -40,12 +40,26 @@ val Divida.parcelasRestantes: Int get() = when {
 }
 val Divida.valorRestanteCentavos: Long get() = valorCentavos * parcelasRestantes
 
-/** Próximo vencimento mensal, mantendo o dia original quando o mês o comporta. */
-fun Divida.proximoVencimento(): LocalDate {
-    val proximo = vencimento.plusMonths(1)
+/** Vencimento deslocado em [meses], mantendo o dia original quando o mês o comporta. */
+private fun Divida.vencimentoDeslocado(meses: Long): LocalDate {
+    val alvo = vencimento.plusMonths(meses)
     val dia = if (diaVencimento > 0) diaVencimento else vencimento.dayOfMonth
-    return proximo.withDayOfMonth(minOf(dia, proximo.lengthOfMonth()))
+    return alvo.withDayOfMonth(minOf(dia, alvo.lengthOfMonth()))
 }
+
+fun Divida.proximoVencimento(): LocalDate = vencimentoDeslocado(1)
+
+/**
+ * Parcelada ou mensal fixa cuja conta deste mês já foi paga: houve pagamento e o
+ * próximo vencimento já caiu num mês futuro.
+ */
+fun Divida.pagaNoMes(hoje: LocalDate): Boolean =
+    !paga && (recorrente || totalParcelas > 1) && parcelasPagas > 0 &&
+        vencimento.isAfter(hoje.withDayOfMonth(hoje.lengthOfMonth()))
+
+/** Desfaz o último pagamento de parcelada/mensal fixa: volta uma parcela e um mês. */
+fun Divida.desfazerUltimoPagamento(): Divida =
+    copy(parcelasPagas = (parcelasPagas - 1).coerceAtLeast(0), vencimentoEpochDay = vencimentoDeslocado(-1).toEpochDay())
 
 /**
  * Paga a parcela atual. Conta mensal fixa: avança um mês, sem fim.

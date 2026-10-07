@@ -94,6 +94,22 @@ import com.minhasdividas.app.data.vencimento
 import com.minhasdividas.app.lembretes.Lembretes
 import com.minhasdividas.app.ui.theme.aviso
 import com.minhasdividas.app.ui.theme.escuro
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import com.minhasdividas.app.data.pagaNoMes
+import com.minhasdividas.app.ui.theme.sucesso
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -171,15 +187,18 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                     onOrdem = vm::definirOrdem,
                 )
             }
-            if (!ui.carregando && ui.visiveis.isEmpty()) {
+            if (!ui.carregando && ui.grupos.isEmpty()) {
                 item(key = "vazio") { EstadoVazio(ui.filtro, Modifier.animateItem()) }
             }
-            items(ui.visiveis, key = { it.id }) { divida ->
-                ItemDivida(
-                    divida = divida,
+            items(ui.grupos, key = { it.categoria.name }) { grupo ->
+                GavetaCategoria(
+                    grupo = grupo,
+                    // Com uma categoria filtrada, só há uma gaveta: já vem aberta.
+                    aberta = ui.filtro.categoria != null || grupo.categoria in ui.abertas,
                     hoje = ui.hoje,
-                    onClick = { formularioId = divida.id },
-                    onAlternarPaga = { vm.alternarPaga(divida) },
+                    onAlternar = { vm.alternarGaveta(grupo.categoria) },
+                    onAbrirDivida = { formularioId = it.id },
+                    onPagar = vm::alternarPaga,
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -379,102 +398,249 @@ private fun BarraFiltros(
 }
 
 @Composable
-private fun ItemDivida(
-    divida: Divida,
+private fun GavetaCategoria(
+    grupo: Grupo,
+    aberta: Boolean,
     hoje: LocalDate,
-    onClick: () -> Unit,
-    onAlternarPaga: () -> Unit,
+    onAlternar: () -> Unit,
+    onAbrirDivida: (Divida) -> Unit,
+    onPagar: (Divida) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cores = MaterialTheme.colorScheme
-    val dias = diasAte(divida.vencimento, hoje)
-    val vencida = !divida.paga && dias < 0
-    val proxima = !divida.paga && dias in 0..3
+    val rotacao by animateFloatAsState(if (aberta) 180f else 0f, label = "seta")
 
     Surface(
-        onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(24.dp),
         color = cores.surfaceContainerLow,
-        border = if (vencida) BorderStroke(1.dp, cores.error.copy(alpha = 0.45f)) else null,
+        border = if (grupo.vencidas > 0) BorderStroke(1.dp, cores.error.copy(alpha = 0.45f)) else null,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 4.dp),
-        ) {
-            IconeCategoria(divida.categoria)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    divida.descricao,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (divida.paga) cores.onSurfaceVariant else cores.onSurface,
-                    textDecoration = if (divida.paga) TextDecoration.LineThrough else null,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    buildString {
-                        append(divida.categoria.rotulo)
-                        if (divida.recorrente) append(" · Todo mês")
-                        if (divida.parcelada) {
-                            if (divida.paga) append(" · ${divida.totalParcelas}x") else append(" · ${divida.parcelaAtual}/${divida.totalParcelas}")
-                        }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = cores.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(6.dp))
-                val (texto, cor) = when {
-                    divida.paga -> "Quitada" to cores.primary
-                    vencida -> textoVencimento(divida.vencimento, hoje) to cores.error
-                    proxima -> textoVencimento(divida.vencimento, hoje) to cores.aviso
-                    dias <= 30 -> "${textoVencimento(divida.vencimento, hoje)} · ${formatarDataCurta(divida.vencimento)}" to cores.onSurfaceVariant
-                    else -> textoVencimento(divida.vencimento, hoje) to cores.onSurfaceVariant
-                }
-                Text(
-                    texto,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = cor,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .background(cor.copy(alpha = 0.12f), CircleShape)
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    formatarMoeda(divida.valorCentavos),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (divida.paga) cores.onSurfaceVariant else cores.onSurface,
-                )
-                if (divida.parcelada && !divida.paga) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = if (aberta) "Recolher" else "Expandir", onClick = onAlternar)
+                    .padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 8.dp),
+            ) {
+                IconeCategoria(grupo.categoria)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
-                        "restam ${formatarMoeda(divida.valorRestanteCentavos)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = cores.onSurfaceVariant,
+                        grupo.categoria.rotulo,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                }
-            }
-            IconButton(onClick = onAlternarPaga) {
-                Crossfade(targetState = divida.paga, label = "paga") { paga ->
-                    if (paga) {
-                        Icon(Icons.Rounded.CheckCircle, contentDescription = "Reabrir dívida", tint = cores.primary)
-                    } else {
-                        Icon(
-                            Icons.Rounded.RadioButtonUnchecked,
-                            contentDescription = when {
-                                divida.parcelada -> "Pagar parcela"
-                                divida.recorrente -> "Pagar conta do mês"
-                                else -> "Marcar como paga"
-                            },
-                            tint = cores.outline,
-                        )
+                    Text(
+                        resumoDaGaveta(grupo),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cores.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val proxima = grupo.proxima
+                    when {
+                        grupo.vencidas > 0 -> {
+                            Spacer(Modifier.height(6.dp))
+                            Etiqueta(if (grupo.vencidas == 1) "1 vencida" else "${grupo.vencidas} vencidas", cores.error)
+                        }
+                        proxima != null -> {
+                            Spacer(Modifier.height(6.dp))
+                            val dias = diasAte(proxima.vencimento, hoje)
+                            Etiqueta(
+                                when (dias) {
+                                    0L -> "Próxima vence hoje"
+                                    1L -> "Próxima vence amanhã"
+                                    else -> "Próxima: ${formatarDataCurta(proxima.vencimento)}"
+                                },
+                                if (dias <= 3) cores.aviso else cores.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
+                Spacer(Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    if (grupo.totalPendente > 0) {
+                        Text(formatarMoeda(grupo.totalPendente), style = MaterialTheme.typography.titleMedium)
+                        Text("em aberto", style = MaterialTheme.typography.labelSmall, color = cores.onSurfaceVariant)
+                    } else {
+                        Text("Em dia", style = MaterialTheme.typography.titleSmall, color = cores.sucesso)
+                    }
+                }
+                Icon(
+                    Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = cores.onSurfaceVariant,
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .rotate(rotacao),
+                )
+            }
+
+            AnimatedVisibility(
+                visible = aberta,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column(
+                    Modifier
+                        .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                        .background(cores.surface, RoundedCornerShape(18.dp))
+                        .padding(vertical = 4.dp),
+                ) {
+                    grupo.dividas.forEachIndexed { i, divida ->
+                        key(divida.id) {
+                            if (i > 0) {
+                                HorizontalDivider(
+                                    Modifier.padding(horizontal = 14.dp),
+                                    color = cores.outlineVariant.copy(alpha = 0.6f),
+                                )
+                            }
+                            LinhaDivida(
+                                divida = divida,
+                                hoje = hoje,
+                                onClick = { onAbrirDivida(divida) },
+                                onPagar = { onPagar(divida) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun resumoDaGaveta(grupo: Grupo): String {
+    fun contar(n: Int, singular: String, plural: String) = "$n ${if (n == 1) singular else plural}"
+    val partes = buildList {
+        if (grupo.pendentes > 0) add(contar(grupo.pendentes, "pendente", "pendentes"))
+        if (grupo.pagasNoMes > 0) add(contar(grupo.pagasNoMes, "paga este mês", "pagas este mês"))
+        if (grupo.quitadas > 0) add(contar(grupo.quitadas, "quitada", "quitadas"))
+    }
+    return partes.joinToString(" · ")
+}
+
+@Composable
+private fun Etiqueta(texto: String, cor: Color) {
+    Text(
+        texto,
+        style = MaterialTheme.typography.labelMedium,
+        color = cor,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .background(cor.copy(alpha = 0.12f), CircleShape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+/** Linha compacta dentro da gaveta: a categoria já está no cabeçalho, então não se repete aqui. */
+@Composable
+private fun LinhaDivida(divida: Divida, hoje: LocalDate, onClick: () -> Unit, onPagar: () -> Unit) {
+    val cores = MaterialTheme.colorScheme
+    val dias = diasAte(divida.vencimento, hoje)
+    val pagaNoMes = divida.pagaNoMes(hoje)
+    val emDia = divida.paga || pagaNoMes
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(start = 14.dp, top = 10.dp, bottom = 10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                divida.descricao,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (divida.paga) cores.onSurfaceVariant else cores.onSurface,
+                textDecoration = if (divida.paga) TextDecoration.LineThrough else null,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            val (texto, cor) = when {
+                divida.paga -> "Quitada" to cores.sucesso
+                pagaNoMes -> "Pago · próxima ${formatarDataCurta(divida.vencimento)}" to cores.sucesso
+                dias < 0 -> textoVencimento(divida.vencimento, hoje) to cores.error
+                dias <= 3 -> textoVencimento(divida.vencimento, hoje) to cores.aviso
+                dias <= 30 -> "${textoVencimento(divida.vencimento, hoje)} · ${formatarDataCurta(divida.vencimento)}" to cores.onSurfaceVariant
+                else -> textoVencimento(divida.vencimento, hoje) to cores.onSurfaceVariant
+            }
+            Etiqueta(texto, cor)
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                formatarMoeda(divida.valorCentavos),
+                style = MaterialTheme.typography.titleSmall,
+                color = if (emDia) cores.onSurfaceVariant else cores.onSurface,
+            )
+            val detalhe = when {
+                divida.recorrente -> "todo mês"
+                divida.parcelada && divida.paga -> "${divida.totalParcelas}x"
+                divida.parcelada -> "${divida.parcelaAtual} de ${divida.totalParcelas}"
+                else -> null
+            }
+            if (detalhe != null) {
+                Text(detalhe, style = MaterialTheme.typography.labelSmall, color = cores.onSurfaceVariant)
+            }
+        }
+        BotaoPagar(divida = divida, marcado = emDia, onPagar = onPagar)
+    }
+}
+
+/**
+ * Círculo de pagamento. Ao tocar num item em aberto, ele fica verde com um "check"
+ * (com um leve pulo) por um instante ANTES da lista mudar, para o pagamento ser visível
+ * mesmo quando a dívida sai da aba ou avança para o mês seguinte.
+ */
+@Composable
+private fun BotaoPagar(divida: Divida, marcado: Boolean, onPagar: () -> Unit) {
+    val cores = MaterialTheme.colorScheme
+    val acaoAtual by rememberUpdatedState(onPagar)
+    var confirmando by remember(divida) { mutableStateOf(false) }
+    LaunchedEffect(confirmando) {
+        if (confirmando) {
+            delay(650)
+            acaoAtual()
+        }
+    }
+    val ativo = marcado || confirmando
+    val escala by animateFloatAsState(
+        targetValue = if (confirmando) 1.2f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "escala",
+    )
+
+    IconButton(onClick = {
+        when {
+            confirmando -> Unit
+            marcado -> onPagar()
+            else -> confirmando = true
+        }
+    }) {
+        Crossfade(targetState = ativo, label = "check") { ok ->
+            if (ok) {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = "Desfazer pagamento",
+                    tint = cores.sucesso,
+                    modifier = Modifier.scale(escala),
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.RadioButtonUnchecked,
+                    contentDescription = when {
+                        divida.parcelada -> "Pagar parcela"
+                        divida.recorrente -> "Pagar conta do mês"
+                        else -> "Marcar como paga"
+                    },
+                    tint = cores.outline,
+                )
             }
         }
     }

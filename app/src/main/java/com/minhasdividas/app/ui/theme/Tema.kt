@@ -132,6 +132,9 @@ val ColorScheme.escuro: Boolean get() = background.luminance() < 0.5f
 /** Cor de "atenção" (vencimento próximo), legível tanto no claro quanto no escuro. */
 val ColorScheme.aviso: Color get() = if (escuro) Color(0xFFFFC069) else Color(0xFFA35F00)
 
+/** Verde de "pago", legível tanto no claro quanto no escuro. */
+val ColorScheme.sucesso: Color get() = if (escuro) Color(0xFF6FD69B) else Color(0xFF23934F)
+
 /** Ajusta a cor da categoria para ter bom contraste no tema atual. */
 fun ColorScheme.corDaCategoria(categoria: Categoria): Color =
     if (escuro) lerp(categoria.cor, Branco, 0.25f) else lerp(categoria.cor, Preto, 0.1f)

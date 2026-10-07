@@ -72,6 +72,33 @@ class DividaTest {
     }
 
     @Test
+    fun contaMensalPagaFicaMarcadaNoMesEPodeSerDesfeita() {
+        val hoje = LocalDate.of(2026, 10, 7)
+        val internet = base.copy(
+            totalParcelas = 1, recorrente = true, diaVencimento = 31,
+            vencimentoEpochDay = LocalDate.of(2026, 10, 31).toEpochDay(),
+        )
+        assertFalse(internet.pagaNoMes(hoje))
+
+        val paga = internet.pagarParcela()
+        assertEquals(LocalDate.of(2026, 11, 30), paga.vencimento)
+        assertTrue(paga.pagaNoMes(hoje))
+        // No mês seguinte, a conta de novembro volta a ficar em aberto.
+        assertFalse(paga.pagaNoMes(LocalDate.of(2026, 11, 1)))
+
+        val desfeita = paga.desfazerUltimoPagamento()
+        assertEquals(internet.vencimento, desfeita.vencimento)
+        assertEquals(0, desfeita.parcelasPagas)
+    }
+
+    @Test
+    fun aVistaNuncaFicaPagaNoMes() {
+        val hoje = LocalDate.of(2026, 10, 7)
+        val avista = base.copy(totalParcelas = 1, vencimentoEpochDay = LocalDate.of(2026, 12, 1).toEpochDay())
+        assertFalse(avista.pagaNoMes(hoje))
+    }
+
+    @Test
     fun textosDeVencimento() {
         val hoje = LocalDate.of(2026, 10, 7)
         assertEquals("Vence hoje", textoVencimento(hoje, hoje))

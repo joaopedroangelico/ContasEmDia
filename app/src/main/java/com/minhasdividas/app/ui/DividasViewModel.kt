@@ -11,6 +11,8 @@ import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.PreferenciasRepo
 import com.minhasdividas.app.data.Tema
 import com.minhasdividas.app.data.formatarData
+import com.minhasdividas.app.data.desfazerUltimoPagamento
+import com.minhasdividas.app.data.pagaNoMes
 import com.minhasdividas.app.data.pagarParcela
 import com.minhasdividas.app.data.reabrir
 import com.minhasdividas.app.data.valorRestanteCentavos
@@ -50,9 +52,22 @@ data class Resumo(
     val pendentes: Int = 0,
 )
 
+/** Uma "gaveta": as dívidas visíveis de uma categoria, com o resumo mostrado quando fechada. */
+data class Grupo(
+    val categoria: Categoria,
+    val dividas: List<Divida>,
+    val pendentes: Int,
+    val pagasNoMes: Int,
+    val quitadas: Int,
+    val vencidas: Int,
+    val totalPendente: Long,
+    val proxima: Divida?,
+)
+
 data class UiState(
     val todas: List<Divida> = emptyList(),
-    val visiveis: List<Divida> = emptyList(),
+    val grupos: List<Grupo> = emptyList(),
+    val abertas: Set<Categoria> = emptySet(),
     val resumo: Resumo = Resumo(),
     val filtro: Filtro = Filtro(),
     val hoje: LocalDate = LocalDate.now(),
@@ -66,6 +81,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).dividaDao()
     private val prefsRepo = PreferenciasRepo(app)
     private val filtro = MutableStateFlow(Filtro())
+    private val abertas = MutableStateFlow<Set<Categoria>>(emptySet())
     private val eventos = Channel<Desfazer>(Channel.BUFFERED)
     private val collator = Collator.getInstance(LocaleBR).apply { strength = Collator.PRIMARY }
 
@@ -74,10 +90,10 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
     val preferencias: StateFlow<Preferencias?> =
         prefsRepo.preferencias.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val ui: StateFlow<UiState> = combine(dao.observarTodas(), filtro) { todas, f -> montar(todas, f) }
+    val ui: StateFlow<UiState> = combine(dao.observarTodas(), filtro, abertas) { todas, f, a -> montar(todas, f, a) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
-    private fun montar(todas: List<Divida>, f: Filtro): UiState {
+    private fun montar(todas: List<Divida>, f: Filtro, abertas: Set<Categoria>): UiState {
         val hoje = LocalDate.now()
         val daCategoria = todas.filter { f.categoria == null || it.categoria == f.categoria }
         val pendentes = daCategoria.filter { !it.paga }
@@ -85,7 +101,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
 
         val resumo = Resumo(
             pendenteMes = pendentes.filter { it.vencimentoEpochDay <= fimDoMes }.sumOf { it.valorCentavos },
-            totalRestante = pendentes.sumOf { it.valorRestanteCentavos },
+            totalRestante = pendentes.sumOf { if (it.recorrente && it.pagaNoMes(hoje)) 0L else it.valorRestanteCentavos },
             vencidas = pendentes.count { it.vencimentoEpochDay < hoje.toEpochDay() },
             pendentes = pendentes.size,
         )
@@ -103,8 +119,29 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             Ordem.MENOR_VALOR -> porStatus.sortedBy { it.valorCentavos }
             Ordem.NOME -> porStatus.sortedWith { a, b -> collator.compare(a.descricao, b.descricao) }
         }
-        return UiState(todas, ordenadas, resumo, f, hoje, carregando = false)
+        val grupos = ordenadas.groupBy { it.categoria }.map { (categoria, dividas) ->
+            val emAberto = dividas.filter { !it.paga && !it.pagaNoMes(hoje) }
+            Grupo(
+                categoria = categoria,
+                dividas = dividas,
+                pendentes = emAberto.size,
+                pagasNoMes = dividas.count { it.pagaNoMes(hoje) },
+                quitadas = dividas.count { it.paga },
+                vencidas = emAberto.count { it.vencimentoEpochDay < hoje.toEpochDay() },
+                totalPendente = emAberto.sumOf { it.valorCentavos },
+                proxima = emAberto.minByOrNull { it.vencimentoEpochDay },
+            )
+        }.sortedWith(
+            // Gavetas com vencidas primeiro, depois pela próxima conta a vencer; as já em dia vão para o fim.
+            compareByDescending<Grupo> { it.vencidas > 0 }
+                .thenBy { it.proxima?.vencimentoEpochDay ?: Long.MAX_VALUE }
+                .thenBy { it.categoria.ordinal },
+        )
+        return UiState(todas, grupos, abertas, resumo, f, hoje, carregando = false)
     }
+
+    fun alternarGaveta(categoria: Categoria) =
+        abertas.update { if (categoria in it) it - categoria else it + categoria }
 
     fun definirStatus(status: FiltroStatus) = filtro.update { it.copy(status = status) }
     fun definirCategoria(categoria: Categoria?) = filtro.update { it.copy(categoria = categoria) }
@@ -115,6 +152,9 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             if (divida.paga) {
                 dao.salvar(divida.reabrir())
                 eventos.send(Desfazer("“${divida.descricao}” voltou para pendentes", divida))
+            } else if (divida.pagaNoMes(LocalDate.now())) {
+                dao.salvar(divida.desfazerUltimoPagamento())
+                eventos.send(Desfazer("Pagamento de “${divida.descricao}” desfeito", divida))
             } else {
                 val nova = divida.pagarParcela()
                 dao.salvar(nova)
@@ -131,6 +171,8 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun salvar(divida: Divida) {
+        // Abre a gaveta da categoria para a dívida recém-salva aparecer.
+        abertas.update { it + divida.categoria }
         viewModelScope.launch { dao.salvar(divida) }
     }
 
