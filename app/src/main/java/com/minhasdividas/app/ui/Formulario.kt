@@ -377,7 +377,7 @@ internal fun CampoValor(centavos: Long, onChange: (Long) -> Unit, rotulo: String
 }
 
 @Composable
-private fun CampoData(rotulo: String, data: LocalDate, onClick: () -> Unit) {
+internal fun CampoData(rotulo: String, data: LocalDate, onClick: () -> Unit) {
     Box {
         OutlinedTextField(
             value = formatarData(data),

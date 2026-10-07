@@ -9,12 +9,17 @@ import com.minhasdividas.app.data.Divida
 import com.minhasdividas.app.data.LocaleBR
 import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.PreferenciasRepo
+import com.minhasdividas.app.data.Recebimento
 import com.minhasdividas.app.data.Tema
-import com.minhasdividas.app.data.formatarData
+import com.minhasdividas.app.data.data
+import com.minhasdividas.app.data.desfazerRecebimento
 import com.minhasdividas.app.data.desfazerUltimoPagamento
+import com.minhasdividas.app.data.formatarData
 import com.minhasdividas.app.data.pagaNoMes
 import com.minhasdividas.app.data.pagarParcela
 import com.minhasdividas.app.data.reabrir
+import com.minhasdividas.app.data.receber
+import com.minhasdividas.app.data.recebidoNoMes
 import com.minhasdividas.app.data.valorRestanteCentavos
 import com.minhasdividas.app.data.vencimento
 import kotlinx.coroutines.channels.Channel
@@ -52,6 +57,8 @@ data class Resumo(
     val pendentes: Int = 0,
     /** Tudo o que pesa no mês: contas já pagas neste mês + as que faltam (inclui vencidas). */
     val contasDoMes: Long = 0,
+    /** Renda extra do mês: já recebida neste mês + a receber até o fim do mês. */
+    val extrasDoMes: Long = 0,
 )
 
 /** Uma "gaveta": as dívidas visíveis de uma categoria, com o resumo mostrado quando fechada. */
@@ -66,24 +73,41 @@ data class Grupo(
     val proxima: Divida?,
 )
 
+/** A gaveta "A receber": renda extra prevista e já recebida. */
+data class GrupoReceber(
+    val itens: List<Recebimento>,
+    val aReceber: Int,
+    val recebidosNoMes: Int,
+    val recebidos: Int,
+    val totalAReceber: Long,
+    val proximo: Recebimento?,
+)
+
 data class UiState(
     val todas: List<Divida> = emptyList(),
+    val recebimentos: List<Recebimento> = emptyList(),
     val grupos: List<Grupo> = emptyList(),
-    val abertas: Set<Categoria> = emptySet(),
+    val receber: GrupoReceber? = null,
+    val abertas: Set<String> = emptySet(),
     val resumo: Resumo = Resumo(),
     val filtro: Filtro = Filtro(),
     val hoje: LocalDate = LocalDate.now(),
     val carregando: Boolean = true,
 )
 
-/** Mensagem com opção de desfazer: [anterior] é o estado da dívida antes da ação. */
-data class Desfazer(val mensagem: String, val anterior: Divida)
+/** Mensagem da barra inferior com a ação que desfaz o que acabou de acontecer. */
+class Desfazer(val mensagem: String, val desfazer: () -> Unit)
+
+/** Chave da gaveta "A receber" no conjunto de gavetas abertas (as demais usam o nome da categoria). */
+const val GAVETA_RECEBER = "RECEBER"
 
 class DividasViewModel(app: Application) : AndroidViewModel(app) {
-    private val dao = AppDatabase.get(app).dividaDao()
+    private val banco = AppDatabase.get(app)
+    private val dao = banco.dividaDao()
+    private val recebimentoDao = banco.recebimentoDao()
     private val prefsRepo = PreferenciasRepo(app)
     private val filtro = MutableStateFlow(Filtro())
-    private val abertas = MutableStateFlow<Set<Categoria>>(emptySet())
+    private val abertas = MutableStateFlow<Set<String>>(emptySet())
     private val eventos = Channel<Desfazer>(Channel.BUFFERED)
     private val collator = Collator.getInstance(LocaleBR).apply { strength = Collator.PRIMARY }
 
@@ -92,10 +116,17 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
     val preferencias: StateFlow<Preferencias?> =
         prefsRepo.preferencias.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val ui: StateFlow<UiState> = combine(dao.observarTodas(), filtro, abertas) { todas, f, a -> montar(todas, f, a) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
+    val ui: StateFlow<UiState> =
+        combine(dao.observarTodas(), recebimentoDao.observarTodos(), filtro, abertas) { todas, recebimentos, f, a ->
+            montar(todas, recebimentos, f, a)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
-    private fun montar(todas: List<Divida>, f: Filtro, abertas: Set<Categoria>): UiState {
+    private fun montar(
+        todas: List<Divida>,
+        recebimentos: List<Recebimento>,
+        f: Filtro,
+        abertas: Set<String>,
+    ): UiState {
         val hoje = LocalDate.now()
         val daCategoria = todas.filter { f.categoria == null || it.categoria == f.categoria }
         val pendentes = daCategoria.filter { !it.paga }
@@ -107,6 +138,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             vencidas = pendentes.count { it.vencimentoEpochDay < hoje.toEpochDay() },
             pendentes = pendentes.size,
             contasDoMes = contasDoMes(todas, hoje),
+            extrasDoMes = extrasDoMes(recebimentos, hoje),
         )
 
         val porStatus = daCategoria.filter {
@@ -140,7 +172,46 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 .thenBy { it.proxima?.vencimentoEpochDay ?: Long.MAX_VALUE }
                 .thenBy { it.categoria.ordinal },
         )
-        return UiState(todas, grupos, abertas, resumo, f, hoje, carregando = false)
+
+        return UiState(
+            todas = todas,
+            recebimentos = recebimentos,
+            grupos = grupos,
+            receber = montarReceber(recebimentos, f, hoje),
+            abertas = abertas,
+            resumo = resumo,
+            filtro = f,
+            hoje = hoje,
+            carregando = false,
+        )
+    }
+
+    /** Renda extra não tem categoria de dívida: com uma categoria filtrada, a gaveta some. */
+    private fun montarReceber(recebimentos: List<Recebimento>, f: Filtro, hoje: LocalDate): GrupoReceber? {
+        if (f.categoria != null) return null
+        val visiveis = recebimentos.filter {
+            when (f.status) {
+                FiltroStatus.PENDENTES -> !it.recebido
+                FiltroStatus.PAGAS -> it.recebido
+                FiltroStatus.TODAS -> true
+            }
+        }
+        if (visiveis.isEmpty()) return null
+        val ordenados = when (f.ordem) {
+            Ordem.VENCIMENTO -> visiveis.sortedWith(compareBy<Recebimento> { it.recebido }.thenBy { it.dataEpochDay })
+            Ordem.MAIOR_VALOR -> visiveis.sortedByDescending { it.valorCentavos }
+            Ordem.MENOR_VALOR -> visiveis.sortedBy { it.valorCentavos }
+            Ordem.NOME -> visiveis.sortedWith { a, b -> collator.compare(a.descricao, b.descricao) }
+        }
+        val emAberto = ordenados.filter { !it.recebido && !it.recebidoNoMes(hoje) }
+        return GrupoReceber(
+            itens = ordenados,
+            aReceber = emAberto.size,
+            recebidosNoMes = ordenados.count { it.recebidoNoMes(hoje) },
+            recebidos = ordenados.count { it.recebido },
+            totalAReceber = emAberto.sumOf { it.valorCentavos },
+            proximo = emAberto.minByOrNull { it.dataEpochDay },
+        )
     }
 
     private fun contasDoMes(todas: List<Divida>, hoje: LocalDate): Long {
@@ -159,52 +230,102 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun alternarGaveta(categoria: Categoria) =
-        abertas.update { if (categoria in it) it - categoria else it + categoria }
+    private fun extrasDoMes(recebimentos: List<Recebimento>, hoje: LocalDate): Long {
+        val inicio = hoje.withDayOfMonth(1).toEpochDay()
+        val fim = hoje.withDayOfMonth(hoje.lengthOfMonth()).toEpochDay()
+        return recebimentos.sumOf { r ->
+            when {
+                // Já recebido (único): entra se era previsto para este mês.
+                r.recebido -> if (r.dataEpochDay in inicio..fim) r.valorCentavos else 0L
+                // Mensal que já entrou neste mês.
+                r.recebidoNoMes(hoje) -> r.valorCentavos
+                // Previsto até o fim do mês (inclui atrasados).
+                r.dataEpochDay <= fim -> r.valorCentavos
+                else -> 0L
+            }
+        }
+    }
+
+    fun alternarGaveta(chave: String) =
+        abertas.update { if (chave in it) it - chave else it + chave }
 
     fun definirStatus(status: FiltroStatus) = filtro.update { it.copy(status = status) }
     fun definirCategoria(categoria: Categoria?) = filtro.update { it.copy(categoria = categoria) }
     fun definirOrdem(ordem: Ordem) = filtro.update { it.copy(ordem = ordem) }
 
+    // --- Dívidas ---
+
     fun alternarPaga(divida: Divida) {
         viewModelScope.launch {
-            if (divida.paga) {
-                dao.salvar(divida.reabrir())
-                eventos.send(Desfazer("“${divida.descricao}” voltou para pendentes", divida))
-            } else if (divida.pagaNoMes(LocalDate.now())) {
-                dao.salvar(divida.desfazerUltimoPagamento())
-                eventos.send(Desfazer("Pagamento de “${divida.descricao}” desfeito", divida))
-            } else {
-                val nova = divida.pagarParcela()
-                dao.salvar(nova)
-                val mensagem = if (nova.paga) {
-                    "“${divida.descricao}” quitada"
-                } else if (divida.recorrente) {
-                    "“${divida.descricao}” paga · próxima em ${formatarData(nova.vencimento)}"
-                } else {
-                    "Parcela ${divida.parcelasPagas + 1}/${divida.totalParcelas} paga · próxima em ${formatarData(nova.vencimento)}"
+            val (nova, mensagem) = when {
+                divida.paga -> divida.reabrir() to "“${divida.descricao}” voltou para pendentes"
+                divida.pagaNoMes(LocalDate.now()) ->
+                    divida.desfazerUltimoPagamento() to "Pagamento de “${divida.descricao}” desfeito"
+                else -> {
+                    val paga = divida.pagarParcela()
+                    paga to when {
+                        paga.paga -> "“${divida.descricao}” quitada"
+                        divida.recorrente -> "“${divida.descricao}” paga · próxima em ${formatarData(paga.vencimento)}"
+                        else -> "Parcela ${divida.parcelasPagas + 1}/${divida.totalParcelas} paga · " +
+                            "próxima em ${formatarData(paga.vencimento)}"
+                    }
                 }
-                eventos.send(Desfazer(mensagem, divida))
             }
+            dao.salvar(nova)
+            eventos.send(Desfazer(mensagem) { restaurar(divida) })
         }
     }
 
     fun salvar(divida: Divida) {
         // Abre a gaveta da categoria para a dívida recém-salva aparecer.
-        abertas.update { it + divida.categoria }
+        abertas.update { it + divida.categoria.name }
         viewModelScope.launch { dao.salvar(divida) }
     }
 
     fun excluir(divida: Divida) {
         viewModelScope.launch {
             dao.excluir(divida)
-            eventos.send(Desfazer("“${divida.descricao}” excluída", divida))
+            eventos.send(Desfazer("“${divida.descricao}” excluída") { restaurar(divida) })
         }
     }
 
-    fun restaurar(divida: Divida) {
+    private fun restaurar(divida: Divida) {
         viewModelScope.launch { dao.salvar(divida) }
     }
+
+    // --- Recebimentos ---
+
+    fun alternarRecebido(r: Recebimento) {
+        viewModelScope.launch {
+            val desfazendo = r.recebido || r.recebidoNoMes(LocalDate.now())
+            val novo = if (desfazendo) r.desfazerRecebimento() else r.receber()
+            recebimentoDao.salvar(novo)
+            val mensagem = when {
+                desfazendo -> "Recebimento de “${r.descricao}” desfeito"
+                r.recorrente -> "“${r.descricao}” recebido · próximo em ${formatarData(novo.data)}"
+                else -> "“${r.descricao}” recebido"
+            }
+            eventos.send(Desfazer(mensagem) { restaurar(r) })
+        }
+    }
+
+    fun salvar(recebimento: Recebimento) {
+        abertas.update { it + GAVETA_RECEBER }
+        viewModelScope.launch { recebimentoDao.salvar(recebimento) }
+    }
+
+    fun excluir(recebimento: Recebimento) {
+        viewModelScope.launch {
+            recebimentoDao.excluir(recebimento)
+            eventos.send(Desfazer("“${recebimento.descricao}” excluído") { restaurar(recebimento) })
+        }
+    }
+
+    private fun restaurar(recebimento: Recebimento) {
+        viewModelScope.launch { recebimentoDao.salvar(recebimento) }
+    }
+
+    // --- Preferências ---
 
     fun definirTema(tema: Tema) {
         viewModelScope.launch { prefsRepo.definirTema(tema) }

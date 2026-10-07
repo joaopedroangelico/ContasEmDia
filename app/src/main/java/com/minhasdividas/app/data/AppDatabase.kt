@@ -19,9 +19,27 @@ val MIGRACAO_1_2 = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [Divida::class], version = 2, exportSchema = false)
+/** v3: tabela de recebimentos (renda extra). As dívidas não são tocadas. */
+val MIGRACAO_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `recebimentos` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`descricao` TEXT NOT NULL, " +
+                "`valorCentavos` INTEGER NOT NULL, " +
+                "`dataEpochDay` INTEGER NOT NULL, " +
+                "`recorrente` INTEGER NOT NULL, " +
+                "`diaDoMes` INTEGER NOT NULL, " +
+                "`recebido` INTEGER NOT NULL, " +
+                "`vezesRecebido` INTEGER NOT NULL)",
+        )
+    }
+}
+
+@Database(entities = [Divida::class, Recebimento::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dividaDao(): DividaDao
+    abstract fun recebimentoDao(): RecebimentoDao
 
     companion object {
         @Volatile
@@ -30,7 +48,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun get(context: Context): AppDatabase =
             instancia ?: synchronized(this) {
                 instancia ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "dividas.db")
-                    .addMigrations(MIGRACAO_1_2)
+                    .addMigrations(MIGRACAO_1_2, MIGRACAO_2_3)
                     .build()
                     .also { instancia = it }
             }
