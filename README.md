@@ -4,11 +4,11 @@ App Android para cadastrar e acompanhar dívidas: cartão de crédito, contas me
 
 ## Funcionalidades
 
-- **Cadastro** com descrição, valor, vencimento, categoria e tipo de pagamento:
+- **Cadastro** com descrição, origem opcional ("de onde é a fatura": banco, loja, empresa), valor, vencimento, categoria e tipo de pagamento:
   - **À vista**: paga uma vez e fica quitada.
   - **Parcelada**: parcelas mensais com fim (é possível informar parcelas já pagas).
   - **Mensal fixa**: contas sem última parcela (luz, internet, assinaturas), que se renovam todo mês.
-- **Gavetas por categoria**: cada categoria é uma seção recolhível com resumo (pendentes, pagas no mês, total em aberto, próxima a vencer e vencidas). Vencidas aparecem em vermelho; próximas (até 3 dias), em âmbar.
+- **Gavetas por categoria**: cada categoria é uma seção recolhível com resumo (pendentes, pagas, total em aberto, total do mês, próxima a vencer e vencidas). Aberta, mostra o total pendente e o botão **Pagar tudo** (ex.: todas as compras de uma fatura de cartão de uma vez), com confirmação e desfazer. Vencidas aparecem em vermelho; próximas (até 3 dias), em âmbar.
 - **A receber**: renda extra fora do salário (freela, venda, reembolso), única ou "todo mês", numa gaveta própria.
 - **Salário e sobra**: informe o salário líquido e o app mostra quanto sobra no fim do mês (salário + renda extra − contas do mês, pagas e a pagar).
 - **Botão "+"** expansível com as opções "Nova dívida" e "A receber".

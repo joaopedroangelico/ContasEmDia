@@ -102,6 +102,7 @@ fun FolhaFormulario(
 
     val jaQuitada = inicial?.paga == true
     var descricao by rememberSaveable { mutableStateOf(inicial?.descricao ?: "") }
+    var origem by rememberSaveable { mutableStateOf(inicial?.origem ?: "") }
     var valor by rememberSaveable { mutableLongStateOf(inicial?.valorCentavos ?: 0L) }
     var vencimento by rememberSaveable { mutableLongStateOf(inicial?.vencimentoEpochDay ?: LocalDate.now().toEpochDay()) }
     var categoria by rememberSaveable { mutableStateOf(inicial?.categoria ?: Categoria.CARTAO) }
@@ -142,6 +143,7 @@ fun FolhaFormulario(
         val divida = Divida(
             id = inicial?.id ?: 0,
             descricao = descricao.trim(),
+            origem = origem.trim(),
             valorCentavos = valor,
             vencimentoEpochDay = vencimento,
             categoria = categoria,
@@ -192,6 +194,20 @@ fun FolhaFormulario(
                 },
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Next,
+                ),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = origem,
+                onValueChange = { origem = it.take(40) },
+                label = { Text("De onde é a fatura (opcional)") },
+                placeholder = { Text("Ex.: Nubank, Magazine Luiza, Enel") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Words,
                     imeAction = ImeAction.Next,
                 ),
                 shape = RoundedCornerShape(16.dp),

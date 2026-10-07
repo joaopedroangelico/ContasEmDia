@@ -29,7 +29,12 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -158,15 +163,91 @@ private fun Divisoria() {
 }
 
 @Composable
-private fun ValorLateral(valor: Long, rotulo: String, corValor: Color = Color.Unspecified) {
+private fun ValorLateral(
+    valor: Long,
+    rotulo: String,
+    totalDoMes: Long,
+    textoEmDia: String = "Em dia",
+    corValor: Color = Color.Unspecified,
+) {
     val cores = MaterialTheme.colorScheme
     Column(horizontalAlignment = Alignment.End) {
         if (valor > 0) {
             Text(formatarMoeda(valor), style = MaterialTheme.typography.titleMedium, color = corValor)
             Text(rotulo, style = MaterialTheme.typography.labelSmall, color = cores.onSurfaceVariant)
+            if (totalDoMes > valor) {
+                Text(
+                    "de ${formatarMoeda(totalDoMes)} no mês",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cores.onSurfaceVariant,
+                )
+            }
         } else {
-            Text("Em dia", style = MaterialTheme.typography.titleSmall, color = cores.sucesso)
+            Text(textoEmDia, style = MaterialTheme.typography.titleSmall, color = cores.sucesso)
+            if (totalDoMes > 0) {
+                Text(
+                    "${formatarMoeda(totalDoMes)} no mês",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cores.onSurfaceVariant,
+                )
+            }
         }
+    }
+}
+
+/**
+ * Primeira linha da gaveta aberta: soma de tudo que está pendente e o botão de ação em massa,
+ * com confirmação (a ação pode ser desfeita depois pela barra inferior).
+ */
+@Composable
+private fun LinhaEmMassa(
+    rotulo: String,
+    total: Long,
+    detalhe: String,
+    textoBotao: String,
+    tituloConfirmacao: String,
+    textoConfirmacao: String,
+    onConfirmar: () -> Unit,
+) {
+    val cores = MaterialTheme.colorScheme
+    var confirmar by remember { mutableStateOf(false) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(rotulo, style = MaterialTheme.typography.labelMedium, color = cores.onSurfaceVariant)
+            Text(formatarMoeda(total), style = MaterialTheme.typography.titleMedium)
+            Text(detalhe, style = MaterialTheme.typography.labelSmall, color = cores.onSurfaceVariant)
+        }
+        FilledTonalButton(
+            onClick = { confirmar = true },
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = cores.sucesso.copy(alpha = 0.16f),
+                contentColor = cores.sucesso,
+            ),
+        ) {
+            Icon(Icons.Rounded.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(textoBotao)
+        }
+    }
+    if (confirmar) {
+        AlertDialog(
+            onDismissRequest = { confirmar = false },
+            icon = { Icon(Icons.Rounded.DoneAll, contentDescription = null, tint = cores.sucesso) },
+            title = { Text(tituloConfirmacao) },
+            text = { Text(textoConfirmacao) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmar = false
+                    onConfirmar()
+                }) { Text(textoBotao) }
+            },
+            dismissButton = { TextButton(onClick = { confirmar = false }) { Text("Cancelar") } },
+        )
     }
 }
 
@@ -190,6 +271,7 @@ internal fun Etiqueta(texto: String, cor: Color) {
 @Composable
 private fun LinhaCompacta(
     titulo: String,
+    subtitulo: String?,
     riscado: Boolean,
     etiqueta: String,
     corEtiqueta: Color,
@@ -217,6 +299,15 @@ private fun LinhaCompacta(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (!subtitulo.isNullOrBlank()) {
+                Text(
+                    subtitulo,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = cores.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(Modifier.height(4.dp))
             Etiqueta(etiqueta, corEtiqueta)
         }
@@ -295,12 +386,13 @@ internal fun GavetaCategoria(
     onAlternar: () -> Unit,
     onAbrirDivida: (Divida) -> Unit,
     onPagar: (Divida) -> Unit,
+    onPagarTodas: (List<Divida>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cores = MaterialTheme.colorScheme
     val subtitulo = buildList {
         if (grupo.pendentes > 0) add(contar(grupo.pendentes, "pendente", "pendentes"))
-        if (grupo.pagasNoMes > 0) add(contar(grupo.pagasNoMes, "paga este mês", "pagas este mês"))
+        if (grupo.pagasNoMes > 0) add(contar(grupo.pagasNoMes, "paga", "pagas"))
         if (grupo.quitadas > 0) add(contar(grupo.quitadas, "quitada", "quitadas"))
     }.joinToString(" · ")
     val proxima = grupo.proxima
@@ -331,9 +423,24 @@ internal fun GavetaCategoria(
             }
             else -> null
         },
-        lateral = { ValorLateral(grupo.totalPendente, "em aberto") },
+        lateral = { ValorLateral(grupo.totalPendente, "em aberto", grupo.totalDoMes) },
         modifier = modifier,
     ) {
+        val n = grupo.emAberto.size
+        if (n > 0) {
+            LinhaEmMassa(
+                rotulo = "Total pendente",
+                total = grupo.totalPendente,
+                detalhe = contar(n, "conta", "contas"),
+                textoBotao = "Pagar tudo",
+                tituloConfirmacao = "Pagar tudo em ${grupo.categoria.rotulo}?",
+                textoConfirmacao = "${contar(n, "conta será marcada como paga", "contas serão marcadas como pagas")}, " +
+                    "somando ${formatarMoeda(grupo.totalPendente)}. Parceladas e mensais fixas avançam para o " +
+                    "próximo mês. Você pode desfazer logo em seguida.",
+                onConfirmar = { onPagarTodas(grupo.emAberto) },
+            )
+            Divisoria()
+        }
         grupo.dividas.forEachIndexed { i, divida ->
             key(divida.id) {
                 if (i > 0) Divisoria()
@@ -359,6 +466,7 @@ private fun LinhaDivida(divida: Divida, hoje: LocalDate, onClick: () -> Unit, on
     }
     LinhaCompacta(
         titulo = divida.descricao,
+        subtitulo = divida.origem,
         riscado = divida.paga,
         etiqueta = texto,
         corEtiqueta = cor,
@@ -398,13 +506,14 @@ internal fun GavetaReceber(
     onAlternar: () -> Unit,
     onAbrir: (Recebimento) -> Unit,
     onReceber: (Recebimento) -> Unit,
+    onReceberTodos: (List<Recebimento>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cores = MaterialTheme.colorScheme
     val subtitulo = buildList {
         if (grupo.aReceber > 0) add(contar(grupo.aReceber, "a receber", "a receber"))
-        if (grupo.recebidosNoMes > 0) add(contar(grupo.recebidosNoMes, "recebido este mês", "recebidos este mês"))
-        if (grupo.recebidos > 0) add(contar(grupo.recebidos, "recebido", "recebidos"))
+        val recebidos = grupo.recebidosNoMes + grupo.recebidos
+        if (recebidos > 0) add(contar(recebidos, "recebido", "recebidos"))
     }.joinToString(" · ")
     val proximo = grupo.proximo
 
@@ -439,14 +548,31 @@ internal fun GavetaReceber(
             }
         },
         lateral = {
-            if (grupo.totalAReceber > 0) {
-                ValorLateral(grupo.totalAReceber, "a receber", corValor = cores.sucesso)
-            } else {
-                Text("Recebido", style = MaterialTheme.typography.titleSmall, color = cores.sucesso)
-            }
+            ValorLateral(
+                grupo.totalAReceber,
+                "a receber",
+                grupo.totalDoMes,
+                textoEmDia = "Recebido",
+                corValor = cores.sucesso,
+            )
         },
         modifier = modifier,
     ) {
+        val n = grupo.emAberto.size
+        if (n > 0) {
+            LinhaEmMassa(
+                rotulo = "Total a receber",
+                total = grupo.totalAReceber,
+                detalhe = contar(n, "valor", "valores"),
+                textoBotao = "Receber tudo",
+                tituloConfirmacao = "Receber tudo?",
+                textoConfirmacao = "${contar(n, "valor será marcado como recebido", "valores serão marcados como recebidos")}, " +
+                    "somando ${formatarMoeda(grupo.totalAReceber)}. Os mensais avançam para o próximo mês. " +
+                    "Você pode desfazer logo em seguida.",
+                onConfirmar = { onReceberTodos(grupo.emAberto) },
+            )
+            Divisoria()
+        }
         grupo.itens.forEachIndexed { i, r ->
             key(r.id) {
                 if (i > 0) Divisoria()
@@ -472,6 +598,7 @@ private fun LinhaRecebimento(r: Recebimento, hoje: LocalDate, onClick: () -> Uni
     }
     LinhaCompacta(
         titulo = r.descricao,
+        subtitulo = null,
         riscado = false,
         etiqueta = texto,
         corEtiqueta = cor,

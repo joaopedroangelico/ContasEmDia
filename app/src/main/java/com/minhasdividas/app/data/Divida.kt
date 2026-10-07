@@ -28,6 +28,8 @@ data class Divida(
     val recorrente: Boolean = false,
     /** Dia do mês do vencimento original, para não "escorregar" após meses curtos (31 → 28 → 31). */
     val diaVencimento: Int = 0,
+    /** De onde vem a cobrança (banco, loja, empresa). Opcional: vazio quando não informado. */
+    val origem: String = "",
 )
 
 val Divida.vencimento: LocalDate get() = LocalDate.ofEpochDay(vencimentoEpochDay)

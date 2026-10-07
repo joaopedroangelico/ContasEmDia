@@ -22,6 +22,7 @@ import com.minhasdividas.app.data.receber
 import com.minhasdividas.app.data.recebidoNoMes
 import com.minhasdividas.app.data.valorRestanteCentavos
 import com.minhasdividas.app.data.vencimento
+import androidx.room.withTransaction
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +72,10 @@ data class Grupo(
     val vencidas: Int,
     val totalPendente: Long,
     val proxima: Divida?,
+    /** Em aberto (nem quitadas nem pagas neste mês): o que o "Pagar tudo" paga. */
+    val emAberto: List<Divida>,
+    /** Peso da categoria no mês: pagas neste mês + a pagar (inclui vencidas). */
+    val totalDoMes: Long,
 )
 
 /** A gaveta "A receber": renda extra prevista e já recebida. */
@@ -81,6 +86,8 @@ data class GrupoReceber(
     val recebidos: Int,
     val totalAReceber: Long,
     val proximo: Recebimento?,
+    val emAberto: List<Recebimento>,
+    val totalDoMes: Long,
 )
 
 data class UiState(
@@ -165,6 +172,9 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 vencidas = emAberto.count { it.vencimentoEpochDay < hoje.toEpochDay() },
                 totalPendente = emAberto.sumOf { it.valorCentavos },
                 proxima = emAberto.minByOrNull { it.vencimentoEpochDay },
+                emAberto = emAberto,
+                // Todas da categoria (não só as visíveis no filtro), como no total do cabeçalho.
+                totalDoMes = todas.filter { it.categoria == categoria }.sumOf { it.valorNoMes(hoje) },
             )
         }.sortedWith(
             // Gavetas com vencidas primeiro, depois pela próxima conta a vencer; as já em dia vão para o fim.
@@ -211,38 +221,43 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             recebidos = ordenados.count { it.recebido },
             totalAReceber = emAberto.sumOf { it.valorCentavos },
             proximo = emAberto.minByOrNull { it.dataEpochDay },
+            emAberto = emAberto,
+            totalDoMes = recebimentos.sumOf { it.valorNoMes(hoje) },
         )
     }
 
-    private fun contasDoMes(todas: List<Divida>, hoje: LocalDate): Long {
+    private fun contasDoMes(todas: List<Divida>, hoje: LocalDate): Long = todas.sumOf { it.valorNoMes(hoje) }
+
+    private fun extrasDoMes(recebimentos: List<Recebimento>, hoje: LocalDate): Long =
+        recebimentos.sumOf { it.valorNoMes(hoje) }
+
+    /** Quanto a dívida pesa no mês corrente. */
+    private fun Divida.valorNoMes(hoje: LocalDate): Long {
         val inicio = hoje.withDayOfMonth(1).toEpochDay()
         val fim = hoje.withDayOfMonth(hoje.lengthOfMonth()).toEpochDay()
-        return todas.sumOf { d ->
-            when {
-                // Quitada: conta só se o vencimento era deste mês.
-                d.paga -> if (d.vencimentoEpochDay in inicio..fim) d.valorCentavos else 0L
-                // Mensal/parcelada já paga neste mês: a parcela deste mês conta.
-                d.pagaNoMes(hoje) -> d.valorCentavos
-                // Em aberto que vence até o fim do mês (ou já venceu).
-                d.vencimentoEpochDay <= fim -> d.valorCentavos
-                else -> 0L
-            }
+        return when {
+            // Quitada: conta só se o vencimento era deste mês.
+            paga -> if (vencimentoEpochDay in inicio..fim) valorCentavos else 0L
+            // Mensal/parcelada já paga neste mês: a parcela deste mês conta.
+            pagaNoMes(hoje) -> valorCentavos
+            // Em aberto que vence até o fim do mês (ou já venceu).
+            vencimentoEpochDay <= fim -> valorCentavos
+            else -> 0L
         }
     }
 
-    private fun extrasDoMes(recebimentos: List<Recebimento>, hoje: LocalDate): Long {
+    /** Quanto o recebimento soma no mês corrente. */
+    private fun Recebimento.valorNoMes(hoje: LocalDate): Long {
         val inicio = hoje.withDayOfMonth(1).toEpochDay()
         val fim = hoje.withDayOfMonth(hoje.lengthOfMonth()).toEpochDay()
-        return recebimentos.sumOf { r ->
-            when {
-                // Já recebido (único): entra se era previsto para este mês.
-                r.recebido -> if (r.dataEpochDay in inicio..fim) r.valorCentavos else 0L
-                // Mensal que já entrou neste mês.
-                r.recebidoNoMes(hoje) -> r.valorCentavos
-                // Previsto até o fim do mês (inclui atrasados).
-                r.dataEpochDay <= fim -> r.valorCentavos
-                else -> 0L
-            }
+        return when {
+            // Já recebido (único): entra se era previsto para este mês.
+            recebido -> if (dataEpochDay in inicio..fim) valorCentavos else 0L
+            // Mensal que já entrou neste mês.
+            recebidoNoMes(hoje) -> valorCentavos
+            // Previsto até o fim do mês (inclui atrasados).
+            dataEpochDay <= fim -> valorCentavos
+            else -> 0L
         }
     }
 
@@ -276,6 +291,20 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** "Pagar tudo" da gaveta: paga a parcela/conta atual de cada dívida em aberto. */
+    fun pagarTodas(dividas: List<Divida>) {
+        if (dividas.isEmpty()) return
+        viewModelScope.launch {
+            banco.withTransaction { dividas.forEach { dao.salvar(it.pagarParcela()) } }
+            val mensagem = if (dividas.size == 1) "1 conta paga" else "${dividas.size} contas pagas"
+            eventos.send(Desfazer(mensagem) { restaurarTodas(dividas) })
+        }
+    }
+
+    private fun restaurarTodas(dividas: List<Divida>) {
+        viewModelScope.launch { banco.withTransaction { dividas.forEach { dao.salvar(it) } } }
+    }
+
     fun salvar(divida: Divida) {
         // Abre a gaveta da categoria para a dívida recém-salva aparecer.
         abertas.update { it + divida.categoria.name }
@@ -306,6 +335,22 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 else -> "“${r.descricao}” recebido"
             }
             eventos.send(Desfazer(mensagem) { restaurar(r) })
+        }
+    }
+
+    /** "Receber tudo" da gaveta "A receber". */
+    fun receberTodos(recebimentos: List<Recebimento>) {
+        if (recebimentos.isEmpty()) return
+        viewModelScope.launch {
+            banco.withTransaction { recebimentos.forEach { recebimentoDao.salvar(it.receber()) } }
+            val mensagem = if (recebimentos.size == 1) "1 valor recebido" else "${recebimentos.size} valores recebidos"
+            eventos.send(
+                Desfazer(mensagem) {
+                    viewModelScope.launch {
+                        banco.withTransaction { recebimentos.forEach { recebimentoDao.salvar(it) } }
+                    }
+                },
+            )
         }
     }
 

@@ -36,7 +36,14 @@ val MIGRACAO_2_3 = object : Migration(2, 3) {
     }
 }
 
-@Database(entities = [Divida::class, Recebimento::class], version = 3, exportSchema = false)
+/** v4: origem opcional da dívida ("de onde é a fatura"). Dívidas existentes ficam sem origem. */
+val MIGRACAO_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE dividas ADD COLUMN origem TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+@Database(entities = [Divida::class, Recebimento::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dividaDao(): DividaDao
     abstract fun recebimentoDao(): RecebimentoDao
@@ -48,7 +55,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun get(context: Context): AppDatabase =
             instancia ?: synchronized(this) {
                 instancia ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "dividas.db")
-                    .addMigrations(MIGRACAO_1_2, MIGRACAO_2_3)
+                    .addMigrations(MIGRACAO_1_2, MIGRACAO_2_3, MIGRACAO_3_4)
                     .build()
                     .also { instancia = it }
             }

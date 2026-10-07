@@ -221,6 +221,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                         onAlternar = { vm.alternarGaveta(GAVETA_RECEBER) },
                         onAbrir = { recebimentoId = it.id },
                         onReceber = vm::alternarRecebido,
+                        onReceberTodos = vm::receberTodos,
                         modifier = Modifier.animateItem(),
                     )
                 }
@@ -237,6 +238,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                     onAlternar = { vm.alternarGaveta(grupo.categoria.name) },
                     onAbrirDivida = { formularioId = it.id },
                     onPagar = vm::alternarPaga,
+                    onPagarTodas = vm::pagarTodas,
                     modifier = Modifier.animateItem(),
                 )
             }
