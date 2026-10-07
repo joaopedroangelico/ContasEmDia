@@ -53,6 +53,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import com.minhasdividas.app.BuildConfig
+import com.minhasdividas.app.R
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.layout.fillMaxSize
 import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.Tema
 import com.minhasdividas.app.lembretes.Lembretes
@@ -174,7 +182,56 @@ fun FolhaAjustes(
                     }
                 }
             }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            SecaoSobre()
         }
+    }
+}
+
+/** Autoria e direitos do app, visíveis para quem instala o APK. */
+@Composable
+private fun SecaoSobre() {
+    val cores = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Sobre", style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // O ícone do launcher é adaptativo (não suportado pelo painterResource): monta fundo + desenho.
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(colorResource(R.color.icone_fundo)),
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    // A área visível de um ícone adaptativo é ~2/3 do desenho: amplia para enquadrar igual.
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .scale(1.5f),
+                )
+            }
+            Column(Modifier.padding(start = 12.dp)) {
+                Text("Minhas Dívidas", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Versão ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = cores.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            "© 2026 João Pedro Angélico. Todos os direitos reservados.",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Text(
+            "Uso pessoal permitido. É proibido copiar, modificar, redistribuir ou vender este aplicativo, " +
+                "no todo ou em parte, sem autorização do autor.",
+            style = MaterialTheme.typography.bodySmall,
+            color = cores.onSurfaceVariant,
+        )
     }
 }
 
