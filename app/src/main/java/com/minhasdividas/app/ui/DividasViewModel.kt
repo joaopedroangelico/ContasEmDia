@@ -50,6 +50,8 @@ data class Resumo(
     val totalRestante: Long = 0,
     val vencidas: Int = 0,
     val pendentes: Int = 0,
+    /** Tudo o que pesa no mês: contas já pagas neste mês + as que faltam (inclui vencidas). */
+    val contasDoMes: Long = 0,
 )
 
 /** Uma "gaveta": as dívidas visíveis de uma categoria, com o resumo mostrado quando fechada. */
@@ -104,6 +106,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             totalRestante = pendentes.sumOf { if (it.recorrente && it.pagaNoMes(hoje)) 0L else it.valorRestanteCentavos },
             vencidas = pendentes.count { it.vencimentoEpochDay < hoje.toEpochDay() },
             pendentes = pendentes.size,
+            contasDoMes = contasDoMes(todas, hoje),
         )
 
         val porStatus = daCategoria.filter {
@@ -138,6 +141,22 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 .thenBy { it.categoria.ordinal },
         )
         return UiState(todas, grupos, abertas, resumo, f, hoje, carregando = false)
+    }
+
+    private fun contasDoMes(todas: List<Divida>, hoje: LocalDate): Long {
+        val inicio = hoje.withDayOfMonth(1).toEpochDay()
+        val fim = hoje.withDayOfMonth(hoje.lengthOfMonth()).toEpochDay()
+        return todas.sumOf { d ->
+            when {
+                // Quitada: conta só se o vencimento era deste mês.
+                d.paga -> if (d.vencimentoEpochDay in inicio..fim) d.valorCentavos else 0L
+                // Mensal/parcelada já paga neste mês: a parcela deste mês conta.
+                d.pagaNoMes(hoje) -> d.valorCentavos
+                // Em aberto que vence até o fim do mês (ou já venceu).
+                d.vencimentoEpochDay <= fim -> d.valorCentavos
+                else -> 0L
+            }
+        }
     }
 
     fun alternarGaveta(categoria: Categoria) =
@@ -189,6 +208,10 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
 
     fun definirTema(tema: Tema) {
         viewModelScope.launch { prefsRepo.definirTema(tema) }
+    }
+
+    fun definirSalario(centavos: Long) {
+        viewModelScope.launch { prefsRepo.definirSalario(centavos) }
     }
 
     fun definirLembretes(ativos: Boolean) {

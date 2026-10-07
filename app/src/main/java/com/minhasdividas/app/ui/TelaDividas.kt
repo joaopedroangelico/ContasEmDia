@@ -110,9 +110,13 @@ import androidx.compose.ui.draw.scale
 import com.minhasdividas.app.data.pagaNoMes
 import com.minhasdividas.app.ui.theme.sucesso
 import kotlinx.coroutines.delay
+import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.LocalTime
 
 private const val NOVA = 0L
 private const val NENHUMA = -1L
@@ -127,6 +131,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     // Id da dívida aberta no formulário: NOVA para cadastro, NENHUMA quando fechado.
     var formularioId by rememberSaveable { mutableLongStateOf(NENHUMA) }
     var ajustesAbertos by rememberSaveable { mutableStateOf(false) }
+    var editandoSalario by rememberSaveable { mutableStateOf(false) }
 
     val pedirPermissao = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     fun pedirPermissaoSeNecessario() {
@@ -177,8 +182,17 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "cabecalho") { Cabecalho(onAjustes = { ajustesAbertos = true }) }
-            item(key = "resumo") { CartaoResumo(ui.resumo, ui.filtro.categoria) }
+            item(key = "cabecalho") {
+                Cabecalho(
+                    salario = preferencias.salarioCentavos,
+                    contasDoMes = ui.resumo.contasDoMes,
+                    onEditarSalario = { editandoSalario = true },
+                    onAjustes = { ajustesAbertos = true },
+                )
+            }
+            item(key = "resumo") {
+                CartaoResumo(resumo = ui.resumo, categoria = ui.filtro.categoria)
+            }
             item(key = "filtros") {
                 BarraFiltros(
                     filtro = ui.filtro,
@@ -219,6 +233,14 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
         )
     }
 
+    if (editandoSalario) {
+        DialogoSalario(
+            atual = preferencias.salarioCentavos,
+            onConfirmar = vm::definirSalario,
+            onFechar = { editandoSalario = false },
+        )
+    }
+
     if (ajustesAbertos) {
         FolhaAjustes(
             preferencias = preferencias,
@@ -231,19 +253,64 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
 }
 
 @Composable
-private fun Cabecalho(onAjustes: () -> Unit) {
-    val saudacao = when (LocalTime.now().hour) {
-        in 5..11 -> "Bom dia"
-        in 12..17 -> "Boa tarde"
-        else -> "Boa noite"
-    }
+private fun Cabecalho(salario: Long, contasDoMes: Long, onEditarSalario: () -> Unit, onAjustes: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(saudacao, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LinhaSalario(salario, contasDoMes, onEditarSalario)
             Text("Minhas dívidas", style = MaterialTheme.typography.headlineMedium)
         }
         FilledTonalIconButton(onClick = onAjustes) {
             Icon(Icons.Rounded.Settings, contentDescription = "Ajustes")
+        }
+    }
+}
+
+/**
+ * Salário e quanto sobra depois de todas as contas do mês (pagas e a pagar).
+ * Tocar abre a edição do salário.
+ */
+@Composable
+private fun LinhaSalario(salario: Long, contasDoMes: Long, onClick: () -> Unit) {
+    val cores = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        modifier = Modifier
+            .padding(bottom = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClickLabel = "Editar salário", onClick = onClick)
+            .padding(vertical = 4.dp, horizontal = 2.dp),
+    ) {
+        if (salario <= 0) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Rounded.Payments, contentDescription = null, tint = cores.primary, modifier = Modifier.size(18.dp))
+                Text("Informar salário", style = MaterialTheme.typography.titleSmall, color = cores.primary)
+            }
+            return@Row
+        }
+        val sobra = salario - contasDoMes
+        Column {
+            Text("Salário", style = MaterialTheme.typography.labelMedium, color = cores.onSurfaceVariant)
+            Text(formatarMoeda(salario), style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        }
+        Column {
+            Text(
+                if (sobra < 0) "Faltam no mês" else "Sobra no mês",
+                style = MaterialTheme.typography.labelMedium,
+                color = cores.onSurfaceVariant,
+            )
+            AnimatedContent(
+                targetState = sobra,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "sobra",
+            ) { valor ->
+                Text(
+                    formatarMoeda(abs(valor)),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (valor < 0) cores.error else cores.sucesso,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -292,6 +359,48 @@ private fun CartaoResumo(resumo: Resumo, categoria: Categoria?) {
             }
         }
     }
+}
+
+@Composable
+private fun DialogoSalario(atual: Long, onConfirmar: (Long) -> Unit, onFechar: () -> Unit) {
+    var valor by rememberSaveable { mutableLongStateOf(atual) }
+    AlertDialog(
+        onDismissRequest = onFechar,
+        icon = { Icon(Icons.Rounded.Payments, contentDescription = null) },
+        title = { Text("Salário mensal") },
+        text = {
+            Column {
+                Text(
+                    "Usado para calcular quanto sobra depois das contas do mês. Fica salvo só no seu celular.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(16.dp))
+                CampoValor(centavos = valor, onChange = { valor = it }, rotulo = "Salário líquido", erro = false)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirmar(valor)
+                    onFechar()
+                },
+            ) { Text("Salvar") }
+        },
+        dismissButton = {
+            Row {
+                if (atual > 0) {
+                    TextButton(
+                        onClick = {
+                            onConfirmar(0)
+                            onFechar()
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text("Remover") }
+                }
+                TextButton(onClick = onFechar) { Text("Cancelar") }
+            }
+        },
+    )
 }
 
 @Composable

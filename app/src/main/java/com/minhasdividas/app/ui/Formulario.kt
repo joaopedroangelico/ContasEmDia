@@ -353,7 +353,7 @@ fun FolhaFormulario(
 
 /** Campo de moeda no estilo de app de banco: os dígitos digitados entram pela direita (1 → R$ 0,01). */
 @Composable
-private fun CampoValor(centavos: Long, onChange: (Long) -> Unit, rotulo: String, erro: Boolean) {
+internal fun CampoValor(centavos: Long, onChange: (Long) -> Unit, rotulo: String, erro: Boolean) {
     val texto = if (centavos == 0L) "" else formatarMoeda(centavos)
     OutlinedTextField(
         value = TextFieldValue(texto, selection = TextRange(texto.length)),
