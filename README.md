@@ -46,4 +46,9 @@ A versão release é assinada com a chave em `keystore/` e as senhas ficam em `k
 
 ## Auxiliar
 
-Código testado e instalado no smartphone pela própria IA do Claude. 
+Projeto idealizado por João Pedro Angélico e desenvolvido com o auxílio do **Claude** (IA da Anthropic), usando o Claude Code no VS Code. O Claude:
+
+- escreveu o código do app (Kotlin + Jetpack Compose), os testes automáticos e este README;
+- testou cada versão em um emulador Android, conferindo as telas nos modos claro e escuro;
+- instalou e testou o app diretamente no smartphone (POCO F3) via cabo USB, incluindo as migrações do banco de dados sem perda dos dados já cadastrados;
+- publicou o código e as versões (Releases) neste repositório.
