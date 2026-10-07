@@ -8,8 +8,11 @@ App Android para cadastrar e acompanhar dívidas: cartão de crédito, contas me
   - **À vista**: paga uma vez e fica quitada.
   - **Parcelada**: parcelas mensais com fim (é possível informar parcelas já pagas).
   - **Mensal fixa**: contas sem última parcela (luz, internet, assinaturas), que se renovam todo mês.
-- **Lista** com o vencimento destacado: vencidas em vermelho, próximas (até 3 dias) em âmbar.
-- **Marcar como paga**: parceladas e mensais fixas avançam o vencimento um mês, mantendo o dia original (31 → 28/02 → 31/03); a última parcela quita a dívida. Toda ação pode ser desfeita pela barra inferior.
+- **Gavetas por categoria**: cada categoria é uma seção recolhível com resumo (pendentes, pagas no mês, total em aberto, próxima a vencer e vencidas). Vencidas aparecem em vermelho; próximas (até 3 dias), em âmbar.
+- **A receber**: renda extra fora do salário (freela, venda, reembolso), única ou "todo mês", numa gaveta própria.
+- **Salário e sobra**: informe o salário líquido e o app mostra quanto sobra no fim do mês (salário + renda extra − contas do mês, pagas e a pagar).
+- **Botão "+"** expansível com as opções "Nova dívida" e "A receber".
+- **Marcar como paga/recebido**: o círculo fica verde com um check antes da lista mudar. Parceladas e mensais fixas avançam o vencimento um mês, mantendo o dia original (31 → 28/02 → 31/03); a última parcela quita a dívida. Toda ação pode ser desfeita pela barra inferior.
 - **Resumo** no topo: pendente no mês (inclui vencidas), total restante e quantidade de vencidas.
 - **Filtros**: Pendentes / Pagas / Todas, por categoria, e ordenação por vencimento, valor ou nome.
 - **Lembretes**: notificação diária às 9h para dívidas que vencem no dia ou em 1, 3, 5 ou 7 dias, e para as vencidas.
