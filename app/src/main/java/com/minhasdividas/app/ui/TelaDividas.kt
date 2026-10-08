@@ -86,6 +86,7 @@ import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.diasAte
 import com.minhasdividas.app.data.formatarDataCurta
 import com.minhasdividas.app.data.formatarMoeda
+import com.minhasdividas.app.data.nomesDeCartao
 import com.minhasdividas.app.data.parcelaAtual
 import com.minhasdividas.app.data.parcelada
 import com.minhasdividas.app.data.textoVencimento
@@ -264,6 +265,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     if (formularioId == NOVA || inicial != null) {
         FolhaFormulario(
             inicial = inicial,
+            cartoes = nomesDeCartao(ui.todas),
             onFechar = { formularioId = NENHUMA },
             onSalvar = { divida ->
                 vm.salvar(divida)
@@ -298,6 +300,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
             onTema = vm::definirTema,
             onLembretes = vm::definirLembretes,
             onDias = vm::definirDiasAntecedencia,
+            onHorario = vm::definirHorarioAviso,
         )
     }
 }

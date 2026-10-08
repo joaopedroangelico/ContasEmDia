@@ -66,6 +66,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.PaddingValues
 import com.minhasdividas.app.ui.theme.sucesso
 import com.minhasdividas.app.data.Preferencias
+import com.minhasdividas.app.data.formatarHorario
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import com.minhasdividas.app.data.Tema
 import com.minhasdividas.app.lembretes.Lembretes
 import com.minhasdividas.app.ui.theme.semente
@@ -80,12 +87,16 @@ fun FolhaAjustes(
     onTema: (Tema) -> Unit,
     onLembretes: (Boolean) -> Unit,
     onDias: (Int) -> Unit,
+    onHorario: (Int) -> Unit,
 ) {
     val context = LocalContext.current
+    var escolhendoHorario by remember { mutableStateOf(false) }
     var temPermissao by remember { mutableStateOf(Lembretes.temPermissao(context)) }
+    var nomeDoSom by remember { mutableStateOf(Lembretes.nomeDoSom(context)) }
     // Revalida ao voltar das configurações do sistema.
     LifecycleResumeEffect(Unit) {
         temPermissao = Lembretes.temPermissao(context)
+        nomeDoSom = Lembretes.nomeDoSom(context)
         onPauseOrDispose {}
     }
     val pedirPermissao = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -134,7 +145,7 @@ fun FolhaAjustes(
                 Column(Modifier.weight(1f)) {
                     Text("Lembretes de vencimento", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Notificação diária às ${Lembretes.HORA_DO_AVISO}h",
+                        "Notificação diária às ${formatarHorario(preferencias.minutosAviso)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -152,6 +163,29 @@ fun FolhaAjustes(
 
             AnimatedVisibility(visible = preferencias.lembretesAtivos) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Horário do aviso", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        FilledTonalButton(onClick = { escolhendoHorario = true }) {
+                            Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(formatarHorario(preferencias.minutosAviso))
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Som da notificação", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                nomeDoSom,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { Lembretes.abrirConfiguracaoDoSom(context) }) {
+                            Icon(Icons.Rounded.MusicNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Escolher")
+                        }
+                    }
                     Text("Avisar a partir de", style = MaterialTheme.typography.bodyMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OPCOES_DIAS.forEach { dias ->
@@ -194,6 +228,32 @@ fun FolhaAjustes(
             SecaoSobre()
         }
     }
+
+    if (escolhendoHorario) {
+        DialogoHorario(
+            minutos = preferencias.minutosAviso,
+            onConfirmar = onHorario,
+            onFechar = { escolhendoHorario = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DialogoHorario(minutos: Int, onConfirmar: (Int) -> Unit, onFechar: () -> Unit) {
+    val estado = rememberTimePickerState(initialHour = minutos / 60, initialMinute = minutos % 60, is24Hour = true)
+    AlertDialog(
+        onDismissRequest = onFechar,
+        title = { Text("Horário do aviso") },
+        text = { TimePicker(state = estado) },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirmar(estado.hour * 60 + estado.minute)
+                onFechar()
+            }) { Text("Salvar") }
+        },
+        dismissButton = { TextButton(onClick = onFechar) { Text("Cancelar") } },
+    )
 }
 
 /**

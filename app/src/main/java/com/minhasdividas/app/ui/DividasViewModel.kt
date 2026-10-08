@@ -22,6 +22,7 @@ import com.minhasdividas.app.data.receber
 import com.minhasdividas.app.data.recebidoNoMes
 import com.minhasdividas.app.data.valorRestanteCentavos
 import com.minhasdividas.app.data.vencimento
+import com.minhasdividas.app.lembretes.Lembretes
 import androidx.room.withTransaction
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -390,5 +391,12 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
 
     fun definirDiasAntecedencia(dias: Int) {
         viewModelScope.launch { prefsRepo.definirDiasAntecedencia(dias) }
+    }
+
+    fun definirHorarioAviso(minutos: Int) {
+        viewModelScope.launch {
+            prefsRepo.definirMinutosAviso(minutos)
+            Lembretes.agendar(getApplication(), minutos, substituir = true)
+        }
     }
 }

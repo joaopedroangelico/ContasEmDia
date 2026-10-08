@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.AlertDialog
@@ -57,8 +59,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.minhasdividas.app.data.Cartao
+import com.minhasdividas.app.data.Categoria
 import com.minhasdividas.app.data.Divida
 import com.minhasdividas.app.data.Recebimento
+import com.minhasdividas.app.data.agruparPorCartao
 import com.minhasdividas.app.data.data
 import com.minhasdividas.app.data.diasAte
 import com.minhasdividas.app.data.formatarDataCurta
@@ -210,7 +215,6 @@ private fun LinhaEmMassa(
     onConfirmar: () -> Unit,
 ) {
     val cores = MaterialTheme.colorScheme
-    var confirmar by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -222,17 +226,32 @@ private fun LinhaEmMassa(
             Text(formatarMoeda(total), style = MaterialTheme.typography.titleMedium)
             Text(detalhe, style = MaterialTheme.typography.labelSmall, color = cores.onSurfaceVariant)
         }
-        FilledTonalButton(
-            onClick = { confirmar = true },
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = cores.sucesso.copy(alpha = 0.16f),
-                contentColor = cores.sucesso,
-            ),
-        ) {
-            Icon(Icons.Rounded.DoneAll, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(textoBotao)
-        }
+        BotaoEmMassa(textoBotao, tituloConfirmacao, textoConfirmacao, onConfirmar)
+    }
+}
+
+/** Botão verde de ação em massa ("Pagar tudo", "Pagar fatura"), com confirmação. */
+@Composable
+private fun BotaoEmMassa(
+    textoBotao: String,
+    tituloConfirmacao: String,
+    textoConfirmacao: String,
+    onConfirmar: () -> Unit,
+    compacto: Boolean = false,
+) {
+    val cores = MaterialTheme.colorScheme
+    var confirmar by remember { mutableStateOf(false) }
+    FilledTonalButton(
+        onClick = { confirmar = true },
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = cores.sucesso.copy(alpha = 0.16f),
+            contentColor = cores.sucesso,
+        ),
+        contentPadding = if (compacto) PaddingValues(horizontal = 12.dp) else ButtonDefaults.ContentPadding,
+    ) {
+        Icon(Icons.Rounded.DoneAll, contentDescription = null, modifier = Modifier.size(if (compacto) 16.dp else 18.dp))
+        Spacer(Modifier.width(if (compacto) 4.dp else 6.dp))
+        Text(textoBotao, style = if (compacto) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge)
     }
     if (confirmar) {
         AlertDialog(
@@ -426,6 +445,14 @@ internal fun GavetaCategoria(
         lateral = { ValorLateral(grupo.totalPendente, "em aberto", grupo.totalDoMes) },
         modifier = modifier,
     ) {
+        // Cartão de crédito com nome do cartão informado: separa as compras por cartão, cada um com a sua fatura.
+        if (grupo.categoria == Categoria.CARTAO && grupo.dividas.any { it.origem.isNotBlank() }) {
+            agruparPorCartao(grupo.dividas).forEachIndexed { i, cartao ->
+                if (i > 0) Spacer(Modifier.height(6.dp))
+                SecaoCartao(cartao, hoje, onAbrirDivida, onPagar, onPagarTodas)
+            }
+            return@GavetaBase
+        }
         val n = grupo.emAberto.size
         if (n > 0) {
             LinhaEmMassa(
@@ -450,8 +477,76 @@ internal fun GavetaCategoria(
     }
 }
 
+/** Um cartão dentro da gaveta: nome, fatura em aberto com "Pagar fatura" e as compras dele. */
 @Composable
-private fun LinhaDivida(divida: Divida, hoje: LocalDate, onClick: () -> Unit, onPagar: () -> Unit) {
+private fun SecaoCartao(
+    cartao: Cartao,
+    hoje: LocalDate,
+    onAbrirDivida: (Divida) -> Unit,
+    onPagar: (Divida) -> Unit,
+    onPagarTodas: (List<Divida>) -> Unit,
+) {
+    val cores = MaterialTheme.colorScheme
+    val nome = cartao.nome.ifEmpty { "Cartão não informado" }
+    val emAberto = cartao.dividas.filter { !it.paga && !it.pagaNoMes(hoje) }
+    val fatura = emAberto.sumOf { it.valorCentavos }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .background(cores.primary.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+    ) {
+        Icon(Icons.Rounded.CreditCard, contentDescription = null, tint = cores.primary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(nome, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (fatura > 0) {
+                Text(
+                    "Fatura ${formatarMoeda(fatura)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = cores.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            } else {
+                Text("Fatura paga", style = MaterialTheme.typography.labelSmall, color = cores.sucesso)
+            }
+        }
+        if (emAberto.isNotEmpty()) {
+            BotaoEmMassa(
+                compacto = true,
+                textoBotao = "Pagar fatura",
+                tituloConfirmacao = "Pagar a fatura do $nome?",
+                textoConfirmacao = "${contar(emAberto.size, "compra será marcada como paga", "compras serão marcadas como pagas")}, " +
+                    "somando ${formatarMoeda(fatura)}. Parceladas avançam para o próximo mês. " +
+                    "Você pode desfazer logo em seguida.",
+                onConfirmar = { onPagarTodas(emAberto) },
+            )
+        }
+    }
+    cartao.dividas.forEachIndexed { i, divida ->
+        key(divida.id) {
+            if (i > 0) Divisoria()
+            LinhaDivida(
+                divida,
+                hoje,
+                onClick = { onAbrirDivida(divida) },
+                onPagar = { onPagar(divida) },
+                mostrarOrigem = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LinhaDivida(
+    divida: Divida,
+    hoje: LocalDate,
+    onClick: () -> Unit,
+    onPagar: () -> Unit,
+    mostrarOrigem: Boolean = true,
+) {
     val cores = MaterialTheme.colorScheme
     val dias = diasAte(divida.vencimento, hoje)
     val pagaNoMes = divida.pagaNoMes(hoje)
@@ -466,7 +561,7 @@ private fun LinhaDivida(divida: Divida, hoje: LocalDate, onClick: () -> Unit, on
     }
     LinhaCompacta(
         titulo = divida.descricao,
-        subtitulo = divida.origem,
+        subtitulo = if (mostrarOrigem) divida.origem else null,
         riscado = divida.paga,
         etiqueta = texto,
         corEtiqueta = cor,

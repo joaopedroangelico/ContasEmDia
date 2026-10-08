@@ -76,3 +76,19 @@ fun Divida.pagarParcela(): Divida = when {
 /** Volta uma dívida quitada para pendente, reabrindo a última parcela. */
 fun Divida.reabrir(): Divida =
     copy(paga = false, parcelasPagas = (totalParcelas - 1).coerceAtLeast(0))
+
+/** Compras de um cartão dentro da gaveta "Cartão de crédito". [nome] vazio = cartão não informado. */
+data class Cartao(val nome: String, val dividas: List<Divida>)
+
+/**
+ * Agrupa pelo nome do cartão ([Divida.origem]), ignorando maiúsculas e espaços ("nubank" = "Nubank "),
+ * em ordem alfabética, com as compras sem cartão no fim. Mantém a ordem das dívidas dentro de cada grupo.
+ */
+fun agruparPorCartao(dividas: List<Divida>): List<Cartao> =
+    dividas.groupBy { it.origem.trim().lowercase(LocaleBR) }
+        .map { (chave, lista) -> Cartao(if (chave.isEmpty()) "" else lista.first().origem.trim(), lista) }
+        .sortedWith(compareBy<Cartao> { it.nome.isEmpty() }.thenBy { it.nome.lowercase(LocaleBR) })
+
+/** Nomes de cartão já usados, para sugerir no cadastro. */
+fun nomesDeCartao(dividas: List<Divida>): List<String> =
+    agruparPorCartao(dividas.filter { it.categoria == Categoria.CARTAO }).map { it.nome }.filter { it.isNotEmpty() }

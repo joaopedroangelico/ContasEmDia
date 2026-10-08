@@ -6,7 +6,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.RingtoneManager
 import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -34,7 +36,6 @@ import java.util.concurrent.TimeUnit
 
 object Lembretes {
     const val CANAL = "vencimentos"
-    const val HORA_DO_AVISO = 9
     private const val TRABALHO = "lembretes_diarios"
 
     fun criarCanal(context: Context) {
@@ -45,17 +46,39 @@ object Lembretes {
         NotificationManagerCompat.from(context).createNotificationChannel(canal)
     }
 
-    /** Agenda uma verificação diária, começando no próximo horário do aviso. */
-    fun agendar(context: Context) {
+    /**
+     * Agenda uma verificação diária, começando no próximo [minutosAviso] (minutos desde a meia-noite).
+     * Com [substituir], troca o agendamento existente (o usuário mudou o horário); senão, mantém o atual.
+     */
+    fun agendar(context: Context, minutosAviso: Int, substituir: Boolean = false) {
         val agora = LocalDateTime.now()
-        var proxima = agora.toLocalDate().atTime(HORA_DO_AVISO, 0)
+        var proxima = agora.toLocalDate().atTime(minutosAviso / 60, minutosAviso % 60)
         if (!proxima.isAfter(agora)) proxima = proxima.plusDays(1)
 
         val pedido = PeriodicWorkRequestBuilder<LembreteWorker>(1, TimeUnit.DAYS)
             .setInitialDelay(Duration.between(agora, proxima))
             .build()
-        WorkManager.getInstance(context)
-            .enqueueUniquePeriodicWork(TRABALHO, ExistingPeriodicWorkPolicy.KEEP, pedido)
+        val politica = if (substituir) ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE else ExistingPeriodicWorkPolicy.KEEP
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(TRABALHO, politica, pedido)
+    }
+
+    /**
+     * Nome do toque do canal de vencimentos. O canal nasce com o toque padrão do sistema; o usuário
+     * troca na tela do Android ([abrirConfiguracaoDoSom]), já que o app não pode mudar o som de um canal.
+     */
+    fun nomeDoSom(context: Context): String {
+        val canal = NotificationManagerCompat.from(context).getNotificationChannel(CANAL)
+        val som = canal?.sound ?: return "Sem som"
+        if (som == Settings.System.DEFAULT_NOTIFICATION_URI) return "Padrão do sistema"
+        return runCatching { RingtoneManager.getRingtone(context, som)?.getTitle(context) }.getOrNull() ?: "Personalizado"
+    }
+
+    fun abrirConfiguracaoDoSom(context: Context) {
+        context.startActivity(
+            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                .putExtra(Settings.EXTRA_CHANNEL_ID, CANAL),
+        )
     }
 
     fun temPermissao(context: Context): Boolean =

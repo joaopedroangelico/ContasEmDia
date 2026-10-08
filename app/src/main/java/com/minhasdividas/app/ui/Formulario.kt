@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -87,6 +88,8 @@ enum class TipoPagamento(val rotulo: String, val explicacao: String) {
 @Composable
 fun FolhaFormulario(
     inicial: Divida?,
+    /** Cartões já cadastrados, sugeridos quando a categoria é Cartão de crédito. */
+    cartoes: List<String>,
     onFechar: () -> Unit,
     onSalvar: (Divida) -> Unit,
     onExcluir: (Divida) -> Unit,
@@ -200,11 +203,17 @@ fun FolhaFormulario(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            val ehCartao = categoria == Categoria.CARTAO
             OutlinedTextField(
                 value = origem,
                 onValueChange = { origem = it.take(40) },
-                label = { Text("De onde é a fatura (opcional)") },
-                placeholder = { Text("Ex.: Nubank, Magazine Luiza, Enel") },
+                label = { Text(if (ehCartao) "Nome do cartão (opcional)" else "De onde é a fatura (opcional)") },
+                placeholder = { Text(if (ehCartao) "Ex.: Nubank, Inter, Itaú" else "Ex.: Nubank, Magazine Luiza, Enel") },
+                supportingText = if (ehCartao) {
+                    { Text("As compras ficam separadas por cartão na gaveta.") }
+                } else {
+                    null
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Words,
@@ -213,6 +222,21 @@ fun FolhaFormulario(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth(),
             )
+            AnimatedVisibility(visible = ehCartao && cartoes.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    cartoes.forEach { nome ->
+                        FilterChip(
+                            selected = origem.trim().equals(nome, ignoreCase = true),
+                            onClick = { origem = nome },
+                            label = { Text(nome) },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.CreditCard, contentDescription = null, modifier = Modifier.size(16.dp))
+                            },
+                            shape = CircleShape,
+                        )
+                    }
+                }
+            }
 
             CampoValor(
                 centavos = valor,

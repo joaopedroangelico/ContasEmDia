@@ -25,7 +25,14 @@ data class Preferencias(
     val diasAntecedencia: Int = 3,
     /** Salário líquido mensal, em centavos. 0 = não informado. */
     val salarioCentavos: Long = 0,
+    /** Horário do aviso diário, em minutos desde a meia-noite (padrão 9h). */
+    val minutosAviso: Int = MINUTOS_AVISO_PADRAO,
 )
+
+const val MINUTOS_AVISO_PADRAO = 9 * 60
+
+/** "09:00", "18:30". */
+fun formatarHorario(minutos: Int): String = "%02d:%02d".format(minutos / 60, minutos % 60)
 
 private val Context.dataStore by preferencesDataStore(name = "preferencias")
 
@@ -34,6 +41,7 @@ class PreferenciasRepo(private val context: Context) {
     private val chaveLembretes = booleanPreferencesKey("lembretes_ativos")
     private val chaveDias = intPreferencesKey("dias_antecedencia")
     private val chaveSalario = longPreferencesKey("salario_centavos")
+    private val chaveMinutosAviso = intPreferencesKey("minutos_aviso")
 
     val preferencias: Flow<Preferencias> = context.dataStore.data.map { p ->
         Preferencias(
@@ -41,6 +49,7 @@ class PreferenciasRepo(private val context: Context) {
             lembretesAtivos = p[chaveLembretes] ?: true,
             diasAntecedencia = p[chaveDias] ?: 3,
             salarioCentavos = p[chaveSalario] ?: 0,
+            minutosAviso = p[chaveMinutosAviso] ?: MINUTOS_AVISO_PADRAO,
         )
     }
 
@@ -58,5 +67,9 @@ class PreferenciasRepo(private val context: Context) {
 
     suspend fun definirDiasAntecedencia(dias: Int) {
         context.dataStore.edit { it[chaveDias] = dias }
+    }
+
+    suspend fun definirMinutosAviso(minutos: Int) {
+        context.dataStore.edit { it[chaveMinutosAviso] = minutos }
     }
 }

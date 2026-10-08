@@ -112,4 +112,33 @@ class DividaTest {
     fun moedaEmReais() {
         assertEquals("R$ 1.234,56", formatarMoeda(123_456).replace(' ', ' '))
     }
+
+    @Test
+    fun agrupaPorCartaoIgnorandoMaiusculasESemCartaoNoFim() {
+        val compras = listOf(
+            base.copy(id = 1, origem = "Nubank"),
+            base.copy(id = 2, origem = ""),
+            base.copy(id = 3, origem = "inter"),
+            base.copy(id = 4, origem = " nubank "),
+        )
+        val cartoes = agruparPorCartao(compras)
+        assertEquals(listOf("inter", "Nubank", ""), cartoes.map { it.nome })
+        assertEquals(listOf(1L, 4L), cartoes[1].dividas.map { it.id })
+    }
+
+    @Test
+    fun sugereSoCartoesDeCredito() {
+        val dividas = listOf(
+            base.copy(id = 1, origem = "Nubank"),
+            base.copy(id = 2, origem = "Enel", categoria = Categoria.CONTA_MENSAL),
+            base.copy(id = 3, origem = ""),
+        )
+        assertEquals(listOf("Nubank"), nomesDeCartao(dividas))
+    }
+
+    @Test
+    fun horarioDoAviso() {
+        assertEquals("09:00", formatarHorario(MINUTOS_AVISO_PADRAO))
+        assertEquals("18:30", formatarHorario(18 * 60 + 30))
+    }
 }
