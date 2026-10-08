@@ -55,6 +55,8 @@ data class Resumo(
     val pendenteMes: Long = 0,
     val totalRestante: Long = 0,
     val vencidas: Int = 0,
+    /** Soma da parcela em atraso de cada dívida vencida. */
+    val valorVencidas: Long = 0,
     val pendentes: Int = 0,
     /** Tudo o que pesa no mês: contas já pagas neste mês + as que faltam (inclui vencidas). */
     val contasDoMes: Long = 0,
@@ -139,10 +141,12 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         val pendentes = daCategoria.filter { !it.paga }
         val fimDoMes = hoje.withDayOfMonth(hoje.lengthOfMonth()).toEpochDay()
 
+        val vencidas = pendentes.filter { it.vencimentoEpochDay < hoje.toEpochDay() }
         val resumo = Resumo(
             pendenteMes = pendentes.filter { it.vencimentoEpochDay <= fimDoMes }.sumOf { it.valorCentavos },
             totalRestante = pendentes.sumOf { if (it.recorrente && it.pagaNoMes(hoje)) 0L else it.valorRestanteCentavos },
-            vencidas = pendentes.count { it.vencimentoEpochDay < hoje.toEpochDay() },
+            vencidas = vencidas.size,
+            valorVencidas = vencidas.sumOf { it.valorCentavos },
             pendentes = pendentes.size,
             contasDoMes = contasDoMes(todas, hoje),
             extrasDoMes = extrasDoMes(recebimentos, hoje),

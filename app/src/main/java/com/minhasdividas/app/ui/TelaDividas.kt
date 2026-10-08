@@ -307,7 +307,6 @@ private fun Cabecalho(salario: Long, extras: Long, contasDoMes: Long, onEditarSa
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
         Column(Modifier.weight(1f)) {
             LinhaSalario(salario, extras, contasDoMes, onEditarSalario)
-            Text("Minhas dívidas", style = MaterialTheme.typography.headlineMedium)
         }
         FilledTonalIconButton(onClick = onAjustes) {
             Icon(Icons.Rounded.Settings, contentDescription = "Ajustes")
@@ -405,8 +404,8 @@ private fun CartaoResumo(resumo: Resumo, categoria: Categoria?) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MiniEstatistica("Total restante", formatarMoeda(resumo.totalRestante), texto, Modifier.weight(1f))
                 MiniEstatistica(
-                    rotulo = "Vencidas",
-                    valor = if (resumo.vencidas == 0) "Nenhuma" else resumo.vencidas.toString(),
+                    rotulo = if (resumo.vencidas == 0) "Vencidas" else "Vencidas (${resumo.vencidas})",
+                    valor = if (resumo.vencidas == 0) "Nenhuma" else formatarMoeda(resumo.valorVencidas),
                     corTexto = texto,
                     modifier = Modifier.weight(1f),
                     destaque = resumo.vencidas > 0,
