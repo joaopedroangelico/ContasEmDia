@@ -1,4 +1,4 @@
-# Minhas Dívidas
+# Minhas Despesas
 
 App Android para cadastrar e acompanhar dívidas: cartão de crédito, contas mensais, empréstimos, financiamentos.
 
