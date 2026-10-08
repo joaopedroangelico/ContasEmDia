@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.foundation.Image
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import com.minhasdividas.app.BuildConfig
 import com.minhasdividas.app.R
 import androidx.compose.ui.res.colorResource
@@ -387,7 +388,7 @@ private fun SecaoSobre() {
                 )
             }
             Column(Modifier.padding(start = 12.dp)) {
-                Text("Minhas Dívidas", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Versão ${BuildConfig.VERSION_NAME}",
                     style = MaterialTheme.typography.bodySmall,

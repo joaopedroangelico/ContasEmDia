@@ -1,11 +1,11 @@
-# Política de Privacidade — Minhas Dívidas
+# Política de Privacidade — Contas em Dia
 
 **Última atualização:** 7 de outubro de 2026
 **Responsável:** João Pedro Angélico
 
 ## Resumo
 
-**Seus dados ficam apenas no seu celular.** O Minhas Dívidas não coleta, não envia e não compartilha nenhuma informação com ninguém, nem com o desenvolvedor.
+**Seus dados ficam apenas no seu celular.** O Contas em Dia não coleta, não envia e não compartilha nenhuma informação com ninguém, nem com o desenvolvedor.
 
 ## 1. Quais informações o app guarda
 
@@ -45,13 +45,13 @@ As notificações são criadas no próprio aparelho. Dependendo das configuraç�
 ## 5. Como apagar seus dados
 
 - **Excluir itens:** dentro do app, abra a dívida ou o recebimento e toque em "Excluir".
-- **Apagar tudo:** desinstale o app ou use *Configurações do Android → Apps → Minhas Dívidas → Armazenamento → Limpar dados*.
+- **Apagar tudo:** desinstale o app ou use *Configurações do Android → Apps → Contas em Dia → Armazenamento → Limpar dados*.
 
 Como não existe cópia fora do seu aparelho, **dados apagados não podem ser recuperados** pelo desenvolvedor.
 
 ## 6. Segurança
 
-Seus dados ficam protegidos pelos mecanismos de segurança do próprio Android: outros apps não conseguem ler o armazenamento interno do Minhas Dívidas. Recomendamos manter um bloqueio de tela (PIN, senha ou biometria) no aparelho.
+Seus dados ficam protegidos pelos mecanismos de segurança do próprio Android: outros apps não conseguem ler o armazenamento interno do Contas em Dia. Recomendamos manter um bloqueio de tela (PIN, senha ou biometria) no aparelho.
 
 ## 7. LGPD
 
