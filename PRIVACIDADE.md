@@ -68,4 +68,4 @@ Se esta política mudar, a nova versão será publicada neste repositório e no 
 
 ## 9. Contato
 
-Dúvidas: abra uma *issue* em [github.com/joaopedroangelico/minhas-despesas](https://github.com/joaopedroangelico/minhas-despesas/issues).
+Dúvidas: abra uma *issue* em [github.com/joaopedroangelico/ContasEmDia](https://github.com/joaopedroangelico/ContasEmDia/issues).
