@@ -267,14 +267,11 @@ internal fun GavetaSemData(
             }
         },
         titulo = "Sem data de pagamento",
-        subtitulo = contar(dividas.size, "quitada", "quitadas"),
+        // O total vai no subtítulo: o título é longo e não cabe ao lado de um valor em telas estreitas.
+        subtitulo = "${contar(dividas.size, "quitada", "quitadas")} · " +
+            formatarMoeda(dividas.sumOf { it.valorCentavos * it.totalParcelas }),
         etiqueta = null,
-        lateral = {
-            Column(horizontalAlignment = Alignment.End) {
-                Text(formatarMoeda(dividas.sumOf { it.valorCentavos * it.totalParcelas }), style = MaterialTheme.typography.titleMedium)
-                Text("quitado", style = MaterialTheme.typography.labelSmall, color = cores.onSurfaceVariant)
-            }
-        },
+        lateral = {},
         modifier = modifier,
     ) {
         Text(
