@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import com.minhasdividas.app.data.Cartao
 import com.minhasdividas.app.data.Categoria
 import com.minhasdividas.app.data.Divida
+import com.minhasdividas.app.data.FormaPagamento
 import com.minhasdividas.app.data.Recebimento
 import com.minhasdividas.app.data.agruparPorCartao
 import com.minhasdividas.app.data.data
@@ -85,7 +86,7 @@ import java.time.LocalDate
 
 /** Cabeçalho clicável com resumo; ao abrir, mostra [conteudo] num painel embutido. */
 @Composable
-private fun GavetaBase(
+internal fun GavetaBase(
     aberta: Boolean,
     onAlternar: () -> Unit,
     alerta: Boolean,
@@ -160,7 +161,7 @@ private fun GavetaBase(
 }
 
 @Composable
-private fun Divisoria() {
+internal fun Divisoria() {
     HorizontalDivider(
         Modifier.padding(horizontal = 14.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
@@ -270,7 +271,7 @@ private fun BotaoEmMassa(
     }
 }
 
-private fun contar(n: Int, singular: String, plural: String) = "$n ${if (n == 1) singular else plural}"
+internal fun contar(n: Int, singular: String, plural: String) = "$n ${if (n == 1) singular else plural}"
 
 @Composable
 internal fun Etiqueta(texto: String, cor: Color) {
@@ -288,7 +289,7 @@ internal fun Etiqueta(texto: String, cor: Color) {
 
 /** Linha compacta: título + etiqueta à esquerda, valor + detalhe à direita, círculo de confirmação. */
 @Composable
-private fun LinhaCompacta(
+internal fun LinhaCompacta(
     titulo: String,
     subtitulo: String?,
     riscado: Boolean,
@@ -345,15 +346,18 @@ private fun LinhaCompacta(
  * Círculo de confirmação (pagar/receber). Ao tocar num item em aberto, ele fica verde com um
  * "check" (com um leve pulo) por um instante ANTES da lista mudar, para a ação ser visível
  * mesmo quando o item sai da aba ou avança para o mês seguinte. Verde = já confirmado;
- * tocar de novo desfaz.
+ * tocar de novo chama [onDesfazer]. Com [pedirAntes], o toque primeiro abre uma pergunta
+ * (ex.: forma de pagamento) e o check só aparece quando ela confirma.
  */
 @Composable
-private fun BotaoConfirmar(
+internal fun BotaoConfirmar(
     chave: Any,
     marcado: Boolean,
     descricaoMarcar: String,
     descricaoDesfazer: String,
     onConfirmar: () -> Unit,
+    onDesfazer: () -> Unit = onConfirmar,
+    pedirAntes: ((confirmar: () -> Unit) -> Unit)? = null,
 ) {
     val cores = MaterialTheme.colorScheme
     val acaoAtual by rememberUpdatedState(onConfirmar)
@@ -374,7 +378,8 @@ private fun BotaoConfirmar(
     IconButton(onClick = {
         when {
             confirmando -> Unit
-            marcado -> onConfirmar()
+            marcado -> onDesfazer()
+            pedirAntes != null -> pedirAntes { confirmando = true }
             else -> confirmando = true
         }
     }) {
@@ -404,7 +409,8 @@ internal fun GavetaCategoria(
     hoje: LocalDate,
     onAlternar: () -> Unit,
     onAbrirDivida: (Divida) -> Unit,
-    onPagar: (Divida) -> Unit,
+    onPagar: (Divida, FormaPagamento?, Boolean) -> Unit,
+    onDesfazer: (Divida) -> Unit,
     onPagarTodas: (List<Divida>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -449,7 +455,7 @@ internal fun GavetaCategoria(
         if (grupo.categoria == Categoria.CARTAO && grupo.dividas.any { it.origem.isNotBlank() }) {
             agruparPorCartao(grupo.dividas).forEachIndexed { i, cartao ->
                 if (i > 0) Spacer(Modifier.height(6.dp))
-                SecaoCartao(cartao, hoje, onAbrirDivida, onPagar, onPagarTodas)
+                SecaoCartao(cartao, hoje, onAbrirDivida, onPagar, onDesfazer, onPagarTodas)
             }
             return@GavetaBase
         }
@@ -471,7 +477,13 @@ internal fun GavetaCategoria(
         grupo.dividas.forEachIndexed { i, divida ->
             key(divida.id) {
                 if (i > 0) Divisoria()
-                LinhaDivida(divida, hoje, onClick = { onAbrirDivida(divida) }, onPagar = { onPagar(divida) })
+                LinhaDivida(
+                    divida,
+                    hoje,
+                    onClick = { onAbrirDivida(divida) },
+                    onPagar = { forma, padrao -> onPagar(divida, forma, padrao) },
+                    onDesfazer = { onDesfazer(divida) },
+                )
             }
         }
     }
@@ -483,7 +495,8 @@ private fun SecaoCartao(
     cartao: Cartao,
     hoje: LocalDate,
     onAbrirDivida: (Divida) -> Unit,
-    onPagar: (Divida) -> Unit,
+    onPagar: (Divida, FormaPagamento?, Boolean) -> Unit,
+    onDesfazer: (Divida) -> Unit,
     onPagarTodas: (List<Divida>) -> Unit,
 ) {
     val cores = MaterialTheme.colorScheme
@@ -532,7 +545,8 @@ private fun SecaoCartao(
                 divida,
                 hoje,
                 onClick = { onAbrirDivida(divida) },
-                onPagar = { onPagar(divida) },
+                onPagar = { forma, padrao -> onPagar(divida, forma, padrao) },
+                onDesfazer = { onDesfazer(divida) },
                 mostrarOrigem = false,
             )
         }
@@ -540,16 +554,25 @@ private fun SecaoCartao(
 }
 
 @Composable
-private fun LinhaDivida(
+internal fun LinhaDivida(
     divida: Divida,
     hoje: LocalDate,
     onClick: () -> Unit,
-    onPagar: () -> Unit,
+    onPagar: (FormaPagamento?, Boolean) -> Unit,
+    onDesfazer: () -> Unit,
     mostrarOrigem: Boolean = true,
+    /**
+     * Na gaveta de um mês, a conta aparece pelo vencimento daquele mês: a parcela do mês anterior
+     * já paga não a deixa verde (esse pagamento aparece como linha própria no outro mês).
+     */
+    modoMes: Boolean = false,
 ) {
     val cores = MaterialTheme.colorScheme
     val dias = diasAte(divida.vencimento, hoje)
-    val pagaNoMes = divida.pagaNoMes(hoje)
+    val pagaNoMes = !modoMes && divida.pagaNoMes(hoje)
+    // Pergunta a forma de pagamento antes do check; a escolha vale para o pagamento que vem em seguida.
+    var perguntar by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var escolha by remember { mutableStateOf<Pair<FormaPagamento?, Boolean>>(null to false) }
     val emDia = divida.paga || pagaNoMes
     val (texto, cor) = when {
         divida.paga -> "Quitada" to cores.sucesso
@@ -584,7 +607,19 @@ private fun LinhaDivida(
                 else -> "Marcar como paga"
             },
             descricaoDesfazer = "Desfazer pagamento",
-            onConfirmar = onPagar,
+            onConfirmar = { onPagar(escolha.first, escolha.second) },
+            onDesfazer = onDesfazer,
+            pedirAntes = { confirmar -> perguntar = confirmar },
+        )
+    }
+    perguntar?.let { confirmar ->
+        DialogoPagar(
+            divida = divida,
+            onPagar = { forma, padrao ->
+                escolha = forma to padrao
+                confirmar()
+            },
+            onFechar = { perguntar = null },
         )
     }
 }

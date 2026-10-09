@@ -30,6 +30,8 @@ data class Divida(
     val diaVencimento: Int = 0,
     /** De onde vem a cobrança (banco, loja, empresa). Opcional: vazio quando não informado. */
     val origem: String = "",
+    /** Forma de pagamento padrão, já marcada ao pagar. Null = não informada. */
+    val formaPagamento: FormaPagamento? = null,
 )
 
 val Divida.vencimento: LocalDate get() = LocalDate.ofEpochDay(vencimentoEpochDay)

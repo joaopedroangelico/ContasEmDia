@@ -20,8 +20,8 @@ android {
         applicationId = "com.minhasdividas.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.3-beta"
+        versionCode = 8
+        versionName = "1.4-beta"
     }
 
     signingConfigs {
@@ -79,4 +79,6 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     testImplementation("junit:junit:4.13.2")
+    // org.json do Android é só um "stub" nos testes locais: usa a implementação de referência.
+    testImplementation("org.json:json:20240303")
 }

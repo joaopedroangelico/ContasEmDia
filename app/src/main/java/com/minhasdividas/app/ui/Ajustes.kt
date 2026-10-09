@@ -89,6 +89,8 @@ fun FolhaAjustes(
     onLembretes: (Boolean) -> Unit,
     onDias: (Int) -> Unit,
     onHorario: (Int) -> Unit,
+    /** Backup, apagar mês e armazenamento (precisa do ViewModel, por isso vem pronta de fora). */
+    secaoDados: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
     var escolhendoHorario by remember { mutableStateOf(false) }
@@ -223,6 +225,9 @@ fun FolhaAjustes(
             }
 
             HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            secaoDados()
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
             SecaoPrivacidade()
 
             HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -259,8 +264,9 @@ private fun DialogoHorario(minutos: Int, onConfirmar: (Int) -> Unit, onFechar: (
 
 /**
  * Resumo da política de privacidade (texto completo em PRIVACIDADE.md no repositório).
- * Cada frase aqui precisa continuar verdadeira: o app não tem permissão de internet e
- * os dados ficam fora do backup na nuvem (res/xml/regras_*.xml).
+ * Cada frase aqui precisa continuar verdadeira: o app não tem permissão de internet, os dados
+ * ficam fora do backup na nuvem (res/xml/regras_*.xml) e o backup manual só vai para onde o
+ * usuário escolher.
  */
 @Composable
 private fun SecaoPrivacidade() {
@@ -280,6 +286,7 @@ private fun SecaoPrivacidade() {
         ) {
             ItemPrivacidade("Seus dados ficam apenas neste celular.")
             ItemPrivacidade("Nada é enviado ou compartilhado com ninguém, nem com o desenvolvedor.")
+            ItemPrivacidade("O backup é um arquivo que só você cria e guarda onde escolher.")
             ItemPrivacidade("O app não tem acesso à internet, anúncios ou rastreamento.")
             ItemPrivacidade("Sem cadastro, login ou coleta de dados pessoais.")
         }
@@ -299,8 +306,9 @@ private fun SecaoPrivacidade() {
                 ) {
                     TopicoPolitica(
                         "O que fica guardado",
-                        "Somente o que você digita: dívidas, valores a receber, salário (se informado) e " +
-                            "preferências. Tudo fica armazenado localmente, neste aparelho. O app não acessa nome, " +
+                        "Somente o que você digita: dívidas, valores a receber, salário (se informado), o " +
+                            "histórico de pagamentos (dia, hora e forma de pagamento) e preferências. Tudo fica " +
+                            "armazenado localmente, neste aparelho. O app não acessa nome, " +
                             "e-mail, contatos, localização, fotos ou dados bancários.",
                     )
                     TopicoPolitica(
@@ -311,8 +319,10 @@ private fun SecaoPrivacidade() {
                     )
                     TopicoPolitica(
                         "Backup e troca de celular",
-                        "Os dados não entram no backup automático na nuvem. No Android 12 ou superior, uma " +
-                            "transferência direta entre aparelhos feita por você pode levar os dados para o novo celular.",
+                        "Os dados não entram no backup automático na nuvem. Em Ajustes, você pode exportar um " +
+                            "arquivo de backup (com senha, se quiser) e salvá-lo onde escolher; quem leva o arquivo " +
+                            "para outro lugar é o Android, não o app. No Android 12 ou superior, uma transferência " +
+                            "direta entre aparelhos feita por você também pode levar os dados para o novo celular.",
                     )
                     TopicoPolitica(
                         "Permissões",
@@ -321,8 +331,9 @@ private fun SecaoPrivacidade() {
                     )
                     TopicoPolitica(
                         "Apagar seus dados",
-                        "Exclua itens dentro do app, ou desinstale/limpe os dados do app nas configurações do Android. " +
-                            "Como não existe cópia fora do aparelho, dados apagados não podem ser recuperados.",
+                        "Exclua itens ou meses inteiros dentro do app, ou desinstale/limpe os dados do app nas " +
+                            "configurações do Android. Fora os backups que você exportar, não existe cópia fora do " +
+                            "aparelho: dados apagados sem backup não podem ser recuperados.",
                     )
                     TopicoPolitica(
                         "LGPD",
@@ -330,7 +341,7 @@ private fun SecaoPrivacidade() {
                             "desenvolvedor (Lei nº 13.709/2018).",
                     )
                     Text(
-                        "Última atualização: 7 de outubro de 2026",
+                        "Última atualização: 9 de outubro de 2026",
                         style = MaterialTheme.typography.labelSmall,
                         color = cores.onSurfaceVariant,
                     )

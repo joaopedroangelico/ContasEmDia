@@ -3,6 +3,7 @@ package com.minhasdividas.app.data
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Entity
+import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
@@ -57,8 +58,20 @@ interface RecebimentoDao {
     @Query("SELECT * FROM recebimentos")
     fun observarTodos(): Flow<List<Recebimento>>
 
+    @Query("SELECT * FROM recebimentos")
+    suspend fun todos(): List<Recebimento>
+
     @Upsert
     suspend fun salvar(recebimento: Recebimento)
+
+    @Insert
+    suspend fun inserirTodos(recebimentos: List<Recebimento>)
+
+    @Delete
+    suspend fun excluirTodos(recebimentos: List<Recebimento>)
+
+    @Query("DELETE FROM recebimentos")
+    suspend fun limpar()
 
     @Delete
     suspend fun excluir(recebimento: Recebimento)

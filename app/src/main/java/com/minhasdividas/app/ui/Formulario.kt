@@ -109,6 +109,7 @@ fun FolhaFormulario(
     var valor by rememberSaveable { mutableLongStateOf(inicial?.valorCentavos ?: 0L) }
     var vencimento by rememberSaveable { mutableLongStateOf(inicial?.vencimentoEpochDay ?: LocalDate.now().toEpochDay()) }
     var categoria by rememberSaveable { mutableStateOf(inicial?.categoria ?: Categoria.CARTAO) }
+    var forma by rememberSaveable { mutableStateOf(inicial?.formaPagamento) }
     var tipo by rememberSaveable {
         mutableStateOf(
             when {
@@ -160,6 +161,7 @@ fun FolhaFormulario(
             paga = jaQuitada && !recorrente,
             recorrente = recorrente,
             diaVencimento = dia,
+            formaPagamento = forma,
         )
         fecharComAnimacao { onSalvar(divida) }
     }
@@ -289,6 +291,16 @@ fun FolhaFormulario(
                 }
                 Text(
                     tipo.explicacao,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Forma de pagamento (opcional)", style = MaterialTheme.typography.titleSmall)
+                SeletorForma(forma) { forma = it }
+                Text(
+                    "Já vem marcada ao pagar, e dá para trocar na hora.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -1,9 +1,27 @@
 package com.minhasdividas.app.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.minhasdividas.app.data.AppDatabase
+import com.minhasdividas.app.data.Armazenamento
+import com.minhasdividas.app.data.DadosBackup
+import com.minhasdividas.app.data.FormaPagamento
+import com.minhasdividas.app.data.LeituraBackup
+import com.minhasdividas.app.data.LimpezaMes
+import com.minhasdividas.app.data.MesHistorico
+import com.minhasdividas.app.data.Pagamento
+import com.minhasdividas.app.data.agruparPorMes
+import com.minhasdividas.app.data.gerarArquivoBackup
+import com.minhasdividas.app.data.inicioBackup
+import com.minhasdividas.app.data.lerArquivoBackup
+import com.minhasdividas.app.data.medirArmazenamento
+import com.minhasdividas.app.data.mesesComHistorico
+import com.minhasdividas.app.data.montarBackup
+import com.minhasdividas.app.data.planejarLimpeza
+import com.minhasdividas.app.data.quitadasSemHistorico
+import com.minhasdividas.app.data.registrarPagamento
 import com.minhasdividas.app.data.Categoria
 import com.minhasdividas.app.data.Divida
 import com.minhasdividas.app.data.LocaleBR
@@ -24,18 +42,25 @@ import com.minhasdividas.app.data.valorRestanteCentavos
 import com.minhasdividas.app.data.vencimento
 import com.minhasdividas.app.lembretes.Lembretes
 import androidx.room.withTransaction
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.text.Collator
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
 
 enum class FiltroStatus(val rotulo: String) { PENDENTES("Pendentes"), PAGAS("Pagas"), TODAS("Todas") }
 
@@ -96,7 +121,15 @@ data class GrupoReceber(
 data class UiState(
     val todas: List<Divida> = emptyList(),
     val recebimentos: List<Recebimento> = emptyList(),
+    val pagamentos: List<Pagamento> = emptyList(),
+    /** Aba Pendentes: gavetas por categoria. */
     val grupos: List<Grupo> = emptyList(),
+    /** Abas Pagas e Todas: gavetas por mês do pagamento. */
+    val meses: List<MesHistorico> = emptyList(),
+    /** Quitadas antes do histórico existir: sem data de pagamento, ficam numa gaveta à parte. */
+    val semData: List<Divida> = emptyList(),
+    /** Ids do último pagamento de cada dívida: só ele pode ser desfeito. */
+    val ultimosPagamentos: Set<Long> = emptySet(),
     val receber: GrupoReceber? = null,
     val abertas: Set<String> = emptySet(),
     val resumo: Resumo = Resumo(),
@@ -110,14 +143,19 @@ class Desfazer(val mensagem: String, val desfazer: () -> Unit)
 
 /** Chave da gaveta "A receber" no conjunto de gavetas abertas (as demais usam o nome da categoria). */
 const val GAVETA_RECEBER = "RECEBER"
+const val GAVETA_SEM_DATA = "SEM_DATA"
+
+fun chaveMes(mes: YearMonth) = "MES:$mes"
 
 class DividasViewModel(app: Application) : AndroidViewModel(app) {
     private val banco = AppDatabase.get(app)
     private val dao = banco.dividaDao()
     private val recebimentoDao = banco.recebimentoDao()
+    private val pagamentoDao = banco.pagamentoDao()
     private val prefsRepo = PreferenciasRepo(app)
     private val filtro = MutableStateFlow(Filtro())
-    private val abertas = MutableStateFlow<Set<String>>(emptySet())
+    // O mês atual já começa aberto nas abas Pagas e Todas.
+    private val abertas = MutableStateFlow(setOf(chaveMes(YearMonth.now())))
     private val eventos = Channel<Desfazer>(Channel.BUFFERED)
     private val collator = Collator.getInstance(LocaleBR).apply { strength = Collator.PRIMARY }
 
@@ -127,13 +165,20 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         prefsRepo.preferencias.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val ui: StateFlow<UiState> =
-        combine(dao.observarTodas(), recebimentoDao.observarTodos(), filtro, abertas) { todas, recebimentos, f, a ->
-            montar(todas, recebimentos, f, a)
+        combine(
+            dao.observarTodas(),
+            recebimentoDao.observarTodos(),
+            pagamentoDao.observarTodos(),
+            filtro,
+            abertas,
+        ) { todas, recebimentos, pagamentos, f, a ->
+            montar(todas, recebimentos, pagamentos, f, a)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     private fun montar(
         todas: List<Divida>,
         recebimentos: List<Recebimento>,
+        pagamentos: List<Pagamento>,
         f: Filtro,
         abertas: Set<String>,
     ): UiState {
@@ -166,7 +211,8 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             Ordem.MENOR_VALOR -> porStatus.sortedBy { it.valorCentavos }
             Ordem.NOME -> porStatus.sortedWith { a, b -> collator.compare(a.descricao, b.descricao) }
         }
-        val grupos = ordenadas.groupBy { it.categoria }.map { (categoria, dividas) ->
+        val porMes = f.status != FiltroStatus.PENDENTES
+        val grupos = if (porMes) emptyList() else ordenadas.groupBy { it.categoria }.map { (categoria, dividas) ->
             val emAberto = dividas.filter { !it.paga && !it.pagaNoMes(hoje) }
             Grupo(
                 categoria = categoria,
@@ -188,16 +234,52 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 .thenBy { it.categoria.ordinal },
         )
 
+        val zona = ZoneId.systemDefault()
+        val meses = if (!porMes) {
+            emptyList()
+        } else {
+            agruparPorMes(daCategoria, pagamentos, zona)
+                // Em Pagas, meses só com contas em aberto não têm o que mostrar.
+                .filter { f.status == FiltroStatus.TODAS || it.pagos.isNotEmpty() }
+                .map { it.ordenado(f.ordem) }
+        }
+
         return UiState(
             todas = todas,
             recebimentos = recebimentos,
+            pagamentos = pagamentos,
             grupos = grupos,
+            meses = meses,
+            semData = if (porMes) {
+                quitadasSemHistorico(daCategoria, pagamentos).sortedByDescending { it.vencimentoEpochDay }
+            } else {
+                emptyList()
+            },
+            ultimosPagamentos = pagamentos.groupBy { it.dividaId }.values
+                .mapTo(HashSet()) { lista -> lista.maxWith(compareBy<Pagamento> { it.pagoEmMillis }.thenBy { it.id }).id },
             receber = montarReceber(recebimentos, f, hoje),
             abertas = abertas,
             resumo = resumo,
             filtro = f,
             hoje = hoje,
             carregando = false,
+        )
+    }
+
+    /** "Vencimento" mantém o padrão do mês: pagamentos do mais recente, em aberto pelo vencimento. */
+    private fun MesHistorico.ordenado(ordem: Ordem): MesHistorico = when (ordem) {
+        Ordem.VENCIMENTO -> this
+        Ordem.MAIOR_VALOR -> copy(
+            pagos = pagos.sortedByDescending { it.pagamento.valorCentavos },
+            pendentes = pendentes.sortedByDescending { it.valorCentavos },
+        )
+        Ordem.MENOR_VALOR -> copy(
+            pagos = pagos.sortedBy { it.pagamento.valorCentavos },
+            pendentes = pendentes.sortedBy { it.valorCentavos },
+        )
+        Ordem.NOME -> copy(
+            pagos = pagos.sortedWith { a, b -> collator.compare(a.divida.descricao, b.divida.descricao) },
+            pendentes = pendentes.sortedWith { a, b -> collator.compare(a.descricao, b.descricao) },
         )
     }
 
@@ -275,39 +357,92 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Dívidas ---
 
-    fun alternarPaga(divida: Divida) {
+    /** Paga a parcela/conta atual e registra quando e como no histórico. */
+    fun pagar(divida: Divida, forma: FormaPagamento?, tornarPadrao: Boolean) {
         viewModelScope.launch {
-            val (nova, mensagem) = when {
-                divida.paga -> divida.reabrir() to "“${divida.descricao}” voltou para pendentes"
-                divida.pagaNoMes(LocalDate.now()) ->
-                    divida.desfazerUltimoPagamento() to "Pagamento de “${divida.descricao}” desfeito"
-                else -> {
-                    val paga = divida.pagarParcela()
-                    paga to when {
-                        paga.paga -> "“${divida.descricao}” quitada"
-                        divida.recorrente -> "“${divida.descricao}” paga · próxima em ${formatarData(paga.vencimento)}"
-                        else -> "Parcela ${divida.parcelasPagas + 1}/${divida.totalParcelas} paga · " +
-                            "próxima em ${formatarData(paga.vencimento)}"
-                    }
-                }
+            val base = if (tornarPadrao) divida.copy(formaPagamento = forma) else divida
+            val paga = base.pagarParcela()
+            val registro = divida.registrarPagamento(System.currentTimeMillis(), forma)
+            val idRegistro = banco.withTransaction {
+                dao.salvar(paga)
+                pagamentoDao.inserir(registro)
             }
-            dao.salvar(nova)
-            eventos.send(Desfazer(mensagem) { restaurar(divida) })
+            val via = forma?.let { " via ${it.rotulo}" }.orEmpty()
+            val mensagem = when {
+                paga.paga -> "“${divida.descricao}” quitada$via"
+                divida.recorrente -> "“${divida.descricao}” paga$via · próxima em ${formatarData(paga.vencimento)}"
+                else -> "Parcela ${divida.parcelasPagas + 1}/${divida.totalParcelas} paga$via · " +
+                    "próxima em ${formatarData(paga.vencimento)}"
+            }
+            eventos.send(
+                Desfazer(mensagem) {
+                    viewModelScope.launch {
+                        banco.withTransaction {
+                            dao.salvar(divida)
+                            pagamentoDao.excluirPorId(idRegistro)
+                        }
+                    }
+                },
+            )
         }
     }
 
-    /** "Pagar tudo" da gaveta: paga a parcela/conta atual de cada dívida em aberto. */
+    /** Desfaz o último pagamento: volta uma parcela (ou reabre a quitada) e apaga o registro dele. */
+    fun desfazerPagamento(divida: Divida) {
+        viewModelScope.launch {
+            val nova = if (divida.paga) divida.reabrir() else divida.desfazerUltimoPagamento()
+            val ultimo = pagamentoDao.ultimoDa(divida.id)
+            banco.withTransaction {
+                dao.salvar(nova)
+                ultimo?.let { pagamentoDao.excluir(it) }
+            }
+            val mensagem = if (divida.paga) {
+                "“${divida.descricao}” voltou para pendentes"
+            } else {
+                "Pagamento de “${divida.descricao}” desfeito"
+            }
+            eventos.send(
+                Desfazer(mensagem) {
+                    viewModelScope.launch {
+                        banco.withTransaction {
+                            dao.salvar(divida)
+                            ultimo?.let { pagamentoDao.inserir(it) }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    fun alterarForma(pagamento: Pagamento, forma: FormaPagamento?) {
+        viewModelScope.launch { pagamentoDao.atualizar(pagamento.copy(forma = forma)) }
+    }
+
+    /**
+     * "Pagar tudo" da gaveta: paga a parcela/conta atual de cada dívida em aberto, sem perguntar a forma:
+     * cada uma fica com a sua forma padrão.
+     */
     fun pagarTodas(dividas: List<Divida>) {
         if (dividas.isEmpty()) return
         viewModelScope.launch {
-            banco.withTransaction { dividas.forEach { dao.salvar(it.pagarParcela()) } }
+            val agora = System.currentTimeMillis()
+            val registros = dividas.map { it.registrarPagamento(agora, it.formaPagamento) }
+            val ids = banco.withTransaction {
+                dividas.forEach { dao.salvar(it.pagarParcela()) }
+                registros.map { pagamentoDao.inserir(it) }
+            }
             val mensagem = if (dividas.size == 1) "1 conta paga" else "${dividas.size} contas pagas"
-            eventos.send(Desfazer(mensagem) { restaurarTodas(dividas) })
+            eventos.send(
+                Desfazer(mensagem) {
+                    viewModelScope.launch {
+                        banco.withTransaction {
+                            dividas.forEach { dao.salvar(it) }
+                            ids.forEach { pagamentoDao.excluirPorId(it) }
+                        }
+                    }
+                },
+            )
         }
-    }
-
-    private fun restaurarTodas(dividas: List<Divida>) {
-        viewModelScope.launch { banco.withTransaction { dividas.forEach { dao.salvar(it) } } }
     }
 
     fun salvar(divida: Divida) {
@@ -316,15 +451,25 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.salvar(divida) }
     }
 
+    /** Exclui a dívida com o histórico de pagamentos dela; desfazer traz os dois de volta. */
     fun excluir(divida: Divida) {
         viewModelScope.launch {
-            dao.excluir(divida)
-            eventos.send(Desfazer("“${divida.descricao}” excluída") { restaurar(divida) })
+            val historico = pagamentoDao.daDivida(divida.id)
+            banco.withTransaction {
+                pagamentoDao.excluirDaDivida(divida.id)
+                dao.excluir(divida)
+            }
+            eventos.send(
+                Desfazer("“${divida.descricao}” excluída") {
+                    viewModelScope.launch {
+                        banco.withTransaction {
+                            dao.salvar(divida)
+                            pagamentoDao.inserirTodos(historico)
+                        }
+                    }
+                },
+            )
         }
-    }
-
-    private fun restaurar(divida: Divida) {
-        viewModelScope.launch { dao.salvar(divida) }
     }
 
     // --- Recebimentos ---
@@ -375,6 +520,83 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { recebimentoDao.salvar(recebimento) }
     }
 
+    // --- Backup e dados ---
+
+    /** Grava o backup do período escolhido em Ajustes no arquivo [uri]. Retorna o tamanho em bytes. */
+    suspend fun exportar(uri: Uri, senha: String?): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val prefs = prefsRepo.preferencias.first()
+            val dados = montarBackup(
+                dividas = dao.todas(),
+                pagamentos = pagamentoDao.todos(),
+                recebimentos = recebimentoDao.todos(),
+                salarioCentavos = prefs.salarioCentavos,
+                desde = prefs.inicioBackup(LocalDate.now()),
+                agoraMillis = System.currentTimeMillis(),
+                zona = ZoneId.systemDefault(),
+            )
+            val bytes = gerarArquivoBackup(dados, senha).toByteArray(Charsets.UTF_8)
+            val saida = checkNotNull(getApplication<Application>().contentResolver.openOutputStream(uri, "wt"))
+            saida.use { it.write(bytes) }
+            bytes.size
+        }
+    }
+
+    suspend fun lerBackup(uri: Uri, senha: String?): LeituraBackup {
+        val texto = withContext(Dispatchers.IO) {
+            runCatching {
+                getApplication<Application>().contentResolver.openInputStream(uri)?.use { entrada ->
+                    // Um backup tem poucos KB; um arquivo enorme não é backup do app.
+                    val bytes = entrada.lerAte(LIMITE_BACKUP + 1)
+                    if (bytes.size > LIMITE_BACKUP) null else String(bytes, Charsets.UTF_8)
+                }
+            }.getOrNull()
+        } ?: return LeituraBackup.Invalido
+        // Derivar a chave da senha leva um instante: fora da thread principal.
+        return withContext(Dispatchers.Default) { lerArquivoBackup(texto, senha) }
+    }
+
+    /** Substitui todos os dados do app pelos do backup. */
+    suspend fun importar(dados: DadosBackup) {
+        withContext(Dispatchers.IO) {
+            banco.withTransaction {
+                pagamentoDao.limpar()
+                dao.limpar()
+                recebimentoDao.limpar()
+                dao.inserirTodas(dados.dividas)
+                pagamentoDao.inserirTodos(dados.pagamentos)
+                recebimentoDao.inserirTodos(dados.recebimentos)
+            }
+            prefsRepo.definirSalario(dados.salarioCentavos)
+        }
+    }
+
+    suspend fun mesesParaApagar(): List<YearMonth> =
+        mesesComHistorico(pagamentoDao.todos(), recebimentoDao.todos(), ZoneId.systemDefault())
+
+    suspend fun planejarApagarMes(mes: YearMonth): LimpezaMes =
+        planejarLimpeza(mes, dao.todas(), pagamentoDao.todos(), recebimentoDao.todos(), ZoneId.systemDefault())
+
+    suspend fun apagarMes(mes: YearMonth) {
+        banco.withTransaction {
+            val plano = planejarApagarMes(mes)
+            pagamentoDao.excluirTodos(plano.pagamentos)
+            dao.excluirTodas(plano.dividas)
+            recebimentoDao.excluirTodos(plano.recebimentos)
+        }
+    }
+
+    suspend fun armazenamento(): Armazenamento =
+        withContext(Dispatchers.IO) { medirArmazenamento(getApplication()) }
+
+    fun definirPeriodoBackup(meses: Int, desdeEpochDay: Long? = null) {
+        viewModelScope.launch { prefsRepo.definirPeriodoBackup(meses, desdeEpochDay) }
+    }
+
+    fun definirBackupComSenha(ativo: Boolean) {
+        viewModelScope.launch { prefsRepo.definirBackupComSenha(ativo) }
+    }
+
     // --- Preferências ---
 
     fun definirTema(tema: Tema) {
@@ -399,4 +621,18 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             Lembretes.agendar(getApplication(), minutos, substituir = true)
         }
     }
+}
+
+private const val LIMITE_BACKUP = 20 * 1024 * 1024
+
+/** Lê até [limite] bytes (InputStream.readNBytes só existe a partir do Android 13). */
+private fun InputStream.lerAte(limite: Int): ByteArray {
+    val saida = ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (saida.size() < limite) {
+        val lidos = read(buffer, 0, minOf(buffer.size, limite - saida.size()))
+        if (lidos < 0) break
+        saida.write(buffer, 0, lidos)
+    }
+    return saida.toByteArray()
 }

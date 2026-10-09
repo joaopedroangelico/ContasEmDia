@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.minhasdividas.app.data.Categoria
 import com.minhasdividas.app.data.Divida
+import com.minhasdividas.app.data.PagamentoDaDivida
 import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.diasAte
 import com.minhasdividas.app.data.formatarDataCurta
@@ -137,6 +138,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     var ajustesAbertos by rememberSaveable { mutableStateOf(false) }
     var editandoSalario by rememberSaveable { mutableStateOf(false) }
     var recebimentoId by rememberSaveable { mutableLongStateOf(NENHUMA) }
+    var pagamentoId by rememberSaveable { mutableLongStateOf(NENHUMA) }
     var menuAdicionar by rememberSaveable { mutableStateOf(false) }
 
     val pedirPermissao = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -227,7 +229,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                     )
                 }
             }
-            if (!ui.carregando && ui.grupos.isEmpty() && ui.receber == null) {
+            if (!ui.carregando && ui.grupos.isEmpty() && ui.meses.isEmpty() && ui.semData.isEmpty() && ui.receber == null) {
                 item(key = "vazio") { EstadoVazio(ui.filtro, Modifier.animateItem()) }
             }
             items(ui.grupos, key = { it.categoria.name }) { grupo ->
@@ -238,10 +240,40 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                     hoje = ui.hoje,
                     onAlternar = { vm.alternarGaveta(grupo.categoria.name) },
                     onAbrirDivida = { formularioId = it.id },
-                    onPagar = vm::alternarPaga,
+                    onPagar = vm::pagar,
+                    onDesfazer = vm::desfazerPagamento,
                     onPagarTodas = vm::pagarTodas,
                     modifier = Modifier.animateItem(),
                 )
+            }
+            items(ui.meses, key = { chaveMes(it.mes) }) { mes ->
+                val chave = chaveMes(mes.mes)
+                GavetaMes(
+                    mes = mes,
+                    mostrarPendentes = ui.filtro.status == FiltroStatus.TODAS,
+                    aberta = chave in ui.abertas,
+                    hoje = ui.hoje,
+                    ultimosPagamentos = ui.ultimosPagamentos,
+                    onAlternar = { vm.alternarGaveta(chave) },
+                    onAbrirDivida = { formularioId = it.id },
+                    onAbrirPagamento = { pagamentoId = it.pagamento.id },
+                    onPagar = vm::pagar,
+                    onDesfazer = vm::desfazerPagamento,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            if (ui.semData.isNotEmpty()) {
+                item(key = GAVETA_SEM_DATA) {
+                    GavetaSemData(
+                        dividas = ui.semData,
+                        aberta = GAVETA_SEM_DATA in ui.abertas,
+                        hoje = ui.hoje,
+                        onAlternar = { vm.alternarGaveta(GAVETA_SEM_DATA) },
+                        onAbrirDivida = { formularioId = it.id },
+                        onDesfazer = vm::desfazerPagamento,
+                        modifier = Modifier.animateItem(),
+                    )
+                }
             }
         }
         // Véu atrás do menu "+" (o Scaffold empilha o conteúdo): escurece a lista e fecha ao tocar fora.
@@ -285,6 +317,17 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
         )
     }
 
+    val pagamentoAberto = ui.pagamentos.firstOrNull { it.id == pagamentoId }
+    val dividaDoPagamento = pagamentoAberto?.let { p -> ui.todas.firstOrNull { it.id == p.dividaId } }
+    if (pagamentoAberto != null && dividaDoPagamento != null) {
+        DialogoPagamento(
+            item = PagamentoDaDivida(pagamentoAberto, dividaDoPagamento),
+            onAlterarForma = { vm.alterarForma(pagamentoAberto, it) },
+            onEditarConta = { formularioId = dividaDoPagamento.id },
+            onFechar = { pagamentoId = NENHUMA },
+        )
+    }
+
     if (editandoSalario) {
         DialogoSalario(
             atual = preferencias.salarioCentavos,
@@ -301,6 +344,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
             onLembretes = vm::definirLembretes,
             onDias = vm::definirDiasAntecedencia,
             onHorario = vm::definirHorarioAviso,
+            secaoDados = { SecaoDados(vm, preferencias) },
         )
     }
 }
@@ -567,7 +611,8 @@ private fun BarraFiltros(
 private fun EstadoVazio(filtro: Filtro, modifier: Modifier = Modifier) {
     val (titulo, texto) = when (filtro.status) {
         FiltroStatus.PENDENTES -> "Tudo em dia" to "Nenhuma dívida pendente por aqui. Toque em “Nova dívida” para cadastrar."
-        FiltroStatus.PAGAS -> "Nenhuma dívida paga ainda" to "Quando você marcar uma dívida como paga, ela aparece aqui."
+        FiltroStatus.PAGAS -> "Nenhum pagamento ainda" to
+            "Quando você marcar uma conta como paga, ela aparece aqui, no mês em que foi paga."
         FiltroStatus.TODAS -> "Sua lista está vazia" to "Toque em “Nova dívida” para começar a organizar suas contas."
     }
     AnimatedVisibility(visible = true, modifier = modifier) {
