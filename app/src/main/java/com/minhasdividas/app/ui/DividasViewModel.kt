@@ -12,7 +12,11 @@ import com.minhasdividas.app.data.LeituraBackup
 import com.minhasdividas.app.data.LimpezaMes
 import com.minhasdividas.app.data.MesHistorico
 import com.minhasdividas.app.data.Pagamento
+import com.minhasdividas.app.data.SaldoInformado
 import com.minhasdividas.app.data.agruparPorMes
+import com.minhasdividas.app.data.contasDoMes
+import com.minhasdividas.app.data.pagoEm
+import com.minhasdividas.app.data.recebidoNoMes
 import com.minhasdividas.app.data.gerarArquivoBackup
 import com.minhasdividas.app.data.inicioBackup
 import com.minhasdividas.app.data.lerArquivoBackup
@@ -59,6 +63,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.text.Collator
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.ZoneId
 
@@ -183,6 +188,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         abertas: Set<String>,
     ): UiState {
         val hoje = LocalDate.now()
+        val zona = ZoneId.systemDefault()
         val daCategoria = todas.filter { f.categoria == null || it.categoria == f.categoria }
         val pendentes = daCategoria.filter { !it.paga }
         val fimDoMes = hoje.withDayOfMonth(hoje.lengthOfMonth()).toEpochDay()
@@ -194,7 +200,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             vencidas = vencidas.size,
             valorVencidas = vencidas.sumOf { it.valorCentavos },
             pendentes = pendentes.size,
-            contasDoMes = contasDoMes(todas, hoje),
+            contasDoMes = contasDoMes(todas, pagamentos, hoje, zona),
             extrasDoMes = extrasDoMes(recebimentos, hoje),
         )
 
@@ -225,7 +231,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 proxima = emAberto.minByOrNull { it.vencimentoEpochDay },
                 emAberto = emAberto,
                 // Todas da categoria (não só as visíveis no filtro), como no total do cabeçalho.
-                totalDoMes = todas.filter { it.categoria == categoria }.sumOf { it.valorNoMes(hoje) },
+                totalDoMes = contasDoMes(todas.filter { it.categoria == categoria }, pagamentos, hoje, zona),
             )
         }.sortedWith(
             // Gavetas com vencidas primeiro, depois pela próxima conta a vencer; as já em dia vão para o fim.
@@ -234,7 +240,6 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 .thenBy { it.categoria.ordinal },
         )
 
-        val zona = ZoneId.systemDefault()
         val meses = if (!porMes) {
             emptyList()
         } else {
@@ -256,7 +261,8 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 emptyList()
             },
             ultimosPagamentos = pagamentos.groupBy { it.dividaId }.values
-                .mapTo(HashSet()) { lista -> lista.maxWith(compareBy<Pagamento> { it.pagoEmMillis }.thenBy { it.id }).id },
+                // Pela parcela, como PagamentoDao.ultimoDa: a data pode ter sido corrigida.
+                .mapTo(HashSet()) { lista -> lista.maxWith(compareBy<Pagamento> { it.parcela }.thenBy { it.id }).id },
             receber = montarReceber(recebimentos, f, hoje),
             abertas = abertas,
             resumo = resumo,
@@ -313,25 +319,8 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private fun contasDoMes(todas: List<Divida>, hoje: LocalDate): Long = todas.sumOf { it.valorNoMes(hoje) }
-
     private fun extrasDoMes(recebimentos: List<Recebimento>, hoje: LocalDate): Long =
         recebimentos.sumOf { it.valorNoMes(hoje) }
-
-    /** Quanto a dívida pesa no mês corrente. */
-    private fun Divida.valorNoMes(hoje: LocalDate): Long {
-        val inicio = hoje.withDayOfMonth(1).toEpochDay()
-        val fim = hoje.withDayOfMonth(hoje.lengthOfMonth()).toEpochDay()
-        return when {
-            // Quitada: conta só se o vencimento era deste mês.
-            paga -> if (vencimentoEpochDay in inicio..fim) valorCentavos else 0L
-            // Mensal/parcelada já paga neste mês: a parcela deste mês conta.
-            pagaNoMes(hoje) -> valorCentavos
-            // Em aberto que vence até o fim do mês (ou já venceu).
-            vencimentoEpochDay <= fim -> valorCentavos
-            else -> 0L
-        }
-    }
 
     /** Quanto o recebimento soma no mês corrente. */
     private fun Recebimento.valorNoMes(hoje: LocalDate): Long {
@@ -411,6 +400,74 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 },
             )
+        }
+    }
+
+    /**
+     * Gasto que já saiu da conta (Pix, mercado, app): vira uma dívida à vista quitada, com o pagamento
+     * registrado no histórico. Pago hoje fica com a hora de agora; em outro dia, meio-dia.
+     */
+    fun gastoRapido(descricao: String, valorCentavos: Long, data: LocalDate, categoria: Categoria, forma: FormaPagamento?) {
+        viewModelScope.launch {
+            val agora = LocalDateTime.now()
+            val momento = if (data == agora.toLocalDate()) agora else data.atTime(12, 0)
+            val millis = momento.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val (idDivida, idPagamento) = banco.withTransaction {
+                val id = dao.inserir(
+                    Divida(
+                        descricao = descricao,
+                        valorCentavos = valorCentavos,
+                        vencimentoEpochDay = data.toEpochDay(),
+                        categoria = categoria,
+                        parcelasPagas = 1,
+                        paga = true,
+                        diaVencimento = data.dayOfMonth,
+                        formaPagamento = forma,
+                    ),
+                )
+                id to pagamentoDao.inserir(
+                    Pagamento(
+                        dividaId = id,
+                        valorCentavos = valorCentavos,
+                        vencimentoEpochDay = data.toEpochDay(),
+                        pagoEmMillis = millis,
+                        parcela = 1,
+                        forma = forma,
+                    ),
+                )
+            }
+            eventos.send(
+                Desfazer("Gasto “$descricao” registrado") {
+                    viewModelScope.launch {
+                        banco.withTransaction {
+                            pagamentoDao.excluirPorId(idPagamento)
+                            dao.excluirPorId(idDivida)
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    /**
+     * Corrige o dia do pagamento, mantendo a hora registrada. Conta à vista paga no próprio dia do
+     * vencimento (é o caso do gasto rápido) leva o vencimento junto: as duas datas são o mesmo dia.
+     */
+    fun alterarDataPagamento(pagamento: Pagamento, data: LocalDate) {
+        val zona = ZoneId.systemDefault()
+        val antes = pagamento.pagoEm(zona)
+        val millis = data.atTime(antes.toLocalTime()).atZone(zona).toInstant().toEpochMilli()
+        viewModelScope.launch {
+            val divida = dao.todas().firstOrNull { it.id == pagamento.dividaId }
+            val mesmoDia = antes.toLocalDate().toEpochDay() == pagamento.vencimentoEpochDay
+            banco.withTransaction {
+                if (divida != null && mesmoDia && divida.paga && divida.totalParcelas == 1) {
+                    dao.salvar(divida.copy(vencimentoEpochDay = data.toEpochDay(), diaVencimento = data.dayOfMonth))
+                    pagamentoDao.atualizar(pagamento.copy(pagoEmMillis = millis, vencimentoEpochDay = data.toEpochDay()))
+                } else {
+                    pagamentoDao.atualizar(pagamento.copy(pagoEmMillis = millis))
+                }
+            }
         }
     }
 
@@ -601,6 +658,21 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
 
     fun definirTema(tema: Tema) {
         viewModelScope.launch { prefsRepo.definirTema(tema) }
+    }
+
+    /**
+     * Guarda o saldo da conta agora, junto com o que já entrou de renda extra no mês: o que for
+     * recebido depois disso soma ao saldo no "Livre até o fim do mês".
+     */
+    fun definirSaldo(centavos: Long, salarioPendente: Boolean) {
+        viewModelScope.launch {
+            val recebido = recebidoNoMes(recebimentoDao.todos(), LocalDate.now())
+            prefsRepo.definirSaldo(SaldoInformado(centavos, System.currentTimeMillis(), recebido, salarioPendente))
+        }
+    }
+
+    fun removerSaldo() {
+        viewModelScope.launch { prefsRepo.definirSaldo(null) }
     }
 
     fun definirSalario(centavos: Long) {

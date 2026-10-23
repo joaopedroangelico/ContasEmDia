@@ -22,10 +22,16 @@ interface DividaDao {
     suspend fun salvar(divida: Divida)
 
     @Insert
+    suspend fun inserir(divida: Divida): Long
+
+    @Insert
     suspend fun inserirTodas(dividas: List<Divida>)
 
     @Delete
     suspend fun excluirTodas(dividas: List<Divida>)
+
+    @Query("DELETE FROM dividas WHERE id = :id")
+    suspend fun excluirPorId(id: Long)
 
     @Query("DELETE FROM dividas")
     suspend fun limpar()

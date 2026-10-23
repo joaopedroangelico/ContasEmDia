@@ -76,7 +76,8 @@ interface PagamentoDao {
     @Query("SELECT * FROM pagamentos WHERE dividaId = :dividaId")
     suspend fun daDivida(dividaId: Long): List<Pagamento>
 
-    @Query("SELECT * FROM pagamentos WHERE dividaId = :dividaId ORDER BY pagoEmMillis DESC, id DESC LIMIT 1")
+    // Pela parcela, não pela data: a data do pagamento pode ser corrigida para antes de outro pagamento.
+    @Query("SELECT * FROM pagamentos WHERE dividaId = :dividaId ORDER BY parcela DESC, id DESC LIMIT 1")
     suspend fun ultimoDa(dividaId: Long): Pagamento?
 
     @Insert

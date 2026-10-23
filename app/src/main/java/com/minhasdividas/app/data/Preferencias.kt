@@ -33,6 +33,8 @@ data class Preferencias(
     /** Início escolhido pelo usuário, usado quando [mesesBackup] é [BACKUP_DESDE_DATA]. */
     val backupDesdeEpochDay: Long = 0,
     val backupComSenha: Boolean = false,
+    /** Saldo da conta informado para o "Livre até o fim do mês". Null = nunca informado. */
+    val saldo: SaldoInformado? = null,
 )
 
 const val MINUTOS_AVISO_PADRAO = 9 * 60
@@ -61,6 +63,10 @@ class PreferenciasRepo(private val context: Context) {
     private val chaveMesesBackup = intPreferencesKey("meses_backup")
     private val chaveBackupDesde = longPreferencesKey("backup_desde")
     private val chaveBackupSenha = booleanPreferencesKey("backup_com_senha")
+    private val chaveSaldo = longPreferencesKey("saldo_centavos")
+    private val chaveSaldoEm = longPreferencesKey("saldo_em")
+    private val chaveSaldoRecebido = longPreferencesKey("saldo_recebido_ate_entao")
+    private val chaveSaldoSalarioPendente = booleanPreferencesKey("saldo_salario_pendente")
 
     val preferencias: Flow<Preferencias> = context.dataStore.data.map { p ->
         Preferencias(
@@ -72,6 +78,14 @@ class PreferenciasRepo(private val context: Context) {
             mesesBackup = p[chaveMesesBackup] ?: MESES_BACKUP_PADRAO,
             backupDesdeEpochDay = p[chaveBackupDesde] ?: 0,
             backupComSenha = p[chaveBackupSenha] ?: false,
+            saldo = p[chaveSaldo]?.let { centavos ->
+                SaldoInformado(
+                    centavos = centavos,
+                    emMillis = p[chaveSaldoEm] ?: 0,
+                    recebidoAteEntao = p[chaveSaldoRecebido] ?: 0,
+                    salarioPendente = p[chaveSaldoSalarioPendente] ?: false,
+                )
+            },
         )
     }
 
@@ -104,5 +118,19 @@ class PreferenciasRepo(private val context: Context) {
 
     suspend fun definirBackupComSenha(ativo: Boolean) {
         context.dataStore.edit { it[chaveBackupSenha] = ativo }
+    }
+
+    /** Null remove o saldo. */
+    suspend fun definirSaldo(saldo: SaldoInformado?) {
+        context.dataStore.edit {
+            if (saldo == null) {
+                it.remove(chaveSaldo)
+            } else {
+                it[chaveSaldo] = saldo.centavos
+                it[chaveSaldoEm] = saldo.emMillis
+                it[chaveSaldoRecebido] = saldo.recebidoAteEntao
+                it[chaveSaldoSalarioPendente] = saldo.salarioPendente
+            }
+        }
     }
 }

@@ -83,6 +83,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.minhasdividas.app.data.Categoria
 import com.minhasdividas.app.data.Divida
 import com.minhasdividas.app.data.PagamentoDaDivida
+import com.minhasdividas.app.data.saldoLivre
 import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.diasAte
 import com.minhasdividas.app.data.formatarDataCurta
@@ -122,6 +123,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.fillMaxSize
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZoneId
 
 private const val NOVA = 0L
 private const val NENHUMA = -1L
@@ -139,6 +141,9 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     var editandoSalario by rememberSaveable { mutableStateOf(false) }
     var recebimentoId by rememberSaveable { mutableLongStateOf(NENHUMA) }
     var pagamentoId by rememberSaveable { mutableLongStateOf(NENHUMA) }
+    var gastoRapidoAberto by rememberSaveable { mutableStateOf(false) }
+    var editandoSaldo by rememberSaveable { mutableStateOf(false) }
+    var vendoSaldoLivre by rememberSaveable { mutableStateOf(false) }
     var menuAdicionar by rememberSaveable { mutableStateOf(false) }
 
     val pedirPermissao = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -165,6 +170,11 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     }
 
     val fabExpandido by remember { derivedStateOf { listState.firstVisibleItemIndex < 3 } }
+    val saldoLivre = remember(ui, preferencias.saldo, preferencias.salarioCentavos) {
+        preferencias.saldo?.let {
+            saldoLivre(it, preferencias.salarioCentavos, ui.todas, ui.pagamentos, ui.recebimentos, ui.hoje, ZoneId.systemDefault())
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -177,6 +187,10 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                 onNovaDivida = {
                     menuAdicionar = false
                     formularioId = NOVA
+                },
+                onGastoRapido = {
+                    menuAdicionar = false
+                    gastoRapidoAberto = true
                 },
                 onAReceber = {
                     menuAdicionar = false
@@ -202,6 +216,14 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                     contasDoMes = ui.resumo.contasDoMes,
                     onEditarSalario = { editandoSalario = true },
                     onAjustes = { ajustesAbertos = true },
+                )
+            }
+            item(key = "saldo") {
+                LinhaSaldoLivre(
+                    saldo = preferencias.saldo,
+                    livre = saldoLivre,
+                    hoje = ui.hoje,
+                    onClick = { if (saldoLivre != null) vendoSaldoLivre = true else editandoSaldo = true },
                 )
             }
             item(key = "resumo") {
@@ -323,8 +345,37 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
         DialogoPagamento(
             item = PagamentoDaDivida(pagamentoAberto, dividaDoPagamento),
             onAlterarForma = { vm.alterarForma(pagamentoAberto, it) },
+            onAlterarData = { vm.alterarDataPagamento(pagamentoAberto, it) },
             onEditarConta = { formularioId = dividaDoPagamento.id },
             onFechar = { pagamentoId = NENHUMA },
+        )
+    }
+
+    if (gastoRapidoAberto) {
+        FolhaGastoRapido(
+            formaSugerida = ui.pagamentos.maxByOrNull { it.pagoEmMillis }?.forma,
+            onFechar = { gastoRapidoAberto = false },
+            onSalvar = vm::gastoRapido,
+        )
+    }
+
+    val saldoAtual = preferencias.saldo
+    if (vendoSaldoLivre && saldoAtual != null && saldoLivre != null) {
+        DialogoSaldoLivre(
+            saldo = saldoAtual,
+            livre = saldoLivre,
+            hoje = ui.hoje,
+            onAtualizar = { editandoSaldo = true },
+            onFechar = { vendoSaldoLivre = false },
+        )
+    }
+    if (editandoSaldo) {
+        DialogoSaldo(
+            atual = saldoAtual,
+            temSalario = preferencias.salarioCentavos > 0,
+            onSalvar = vm::definirSaldo,
+            onRemover = vm::removerSaldo,
+            onFechar = { editandoSaldo = false },
         )
     }
 

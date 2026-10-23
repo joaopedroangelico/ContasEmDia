@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
@@ -32,7 +33,7 @@ import com.minhasdividas.app.ui.theme.sucesso
 
 /**
  * Botão "+" expansível: ao tocar, gira para "×" e revela as opções
- * "A receber" e "Nova dívida" logo acima.
+ * "A receber", "Gasto rápido" e "Nova dívida" logo acima.
  */
 @Composable
 fun BotaoAdicionar(
@@ -40,6 +41,7 @@ fun BotaoAdicionar(
     rotuloVisivel: Boolean,
     onAlternar: () -> Unit,
     onNovaDivida: () -> Unit,
+    onGastoRapido: () -> Unit,
     onAReceber: () -> Unit,
 ) {
     val cores = MaterialTheme.colorScheme
@@ -58,6 +60,13 @@ fun BotaoAdicionar(
                     fundo = lerp(cores.surface, cores.sucesso, 0.2f),
                     conteudo = cores.sucesso,
                     onClick = onAReceber,
+                )
+                OpcaoAdicionar(
+                    texto = "Gasto rápido",
+                    icone = Icons.Rounded.Bolt,
+                    fundo = cores.tertiaryContainer,
+                    conteudo = cores.onTertiaryContainer,
+                    onClick = onGastoRapido,
                 )
                 OpcaoAdicionar(
                     texto = "Nova dívida",

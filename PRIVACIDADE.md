@@ -1,6 +1,6 @@
 # Política de Privacidade — Contas em Dia
 
-**Última atualização:** 9 de outubro de 2026
+**Última atualização:** 23 de outubro de 2026
 **Responsável:** João Pedro Angélico
 
 ## Resumo
@@ -11,10 +11,11 @@
 
 O app guarda **somente o que você digita**:
 
-- dívidas (descrição, valor, vencimento, categoria, parcelas e forma de pagamento padrão);
+- dívidas e gastos (descrição, valor, vencimento, categoria, parcelas e forma de pagamento padrão);
 - histórico de pagamentos (dia e hora em que você marcou cada conta como paga, valor e forma de pagamento: PIX, boleto etc.);
 - valores a receber (renda extra);
 - salário mensal, se você informar;
+- saldo da conta, se você informar (usado só para calcular quanto fica livre até o fim do mês);
 - preferências (tema, lembretes e período do backup).
 
 Tudo isso fica armazenado **localmente**, num banco de dados interno do app no seu aparelho.

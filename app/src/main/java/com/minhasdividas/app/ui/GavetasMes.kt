@@ -2,6 +2,9 @@ package com.minhasdividas.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material3.AlertDialog
@@ -371,16 +375,18 @@ internal fun DialogoPagar(divida: Divida, onPagar: (FormaPagamento?, Boolean) ->
     )
 }
 
-/** Detalhes de um pagamento do histórico; a forma pode ser corrigida aqui. */
+/** Detalhes de um pagamento do histórico; o dia e a forma podem ser corrigidos aqui. */
 @Composable
 internal fun DialogoPagamento(
     item: PagamentoDaDivida,
     onAlterarForma: (FormaPagamento?) -> Unit,
+    onAlterarData: (LocalDate) -> Unit,
     onEditarConta: () -> Unit,
     onFechar: () -> Unit,
 ) {
     val cores = MaterialTheme.colorScheme
     val (p, divida) = item
+    var escolhendoData by remember { mutableStateOf(false) }
     val pagoEm = p.pagoEm()
     val dias = diasAte(pagoEm.toLocalDate(), p.vencimento)
     AlertDialog(
@@ -392,7 +398,34 @@ internal fun DialogoPagamento(
                 LinhaDetalhe("Valor", formatarMoeda(p.valorCentavos))
                 if (divida.parcelada) LinhaDetalhe("Parcela", "${p.parcela} de ${divida.totalParcelas}")
                 LinhaDetalhe("Vencimento", formatarData(p.vencimento))
-                LinhaDetalhe("Pago em", "${formatarData(pagoEm.toLocalDate())} às ${formatarHora(pagoEm)}")
+                // Registrado no dia em que foi marcado; se o pagamento real foi outro dia, dá para corrigir.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClickLabel = "Corrigir a data do pagamento") { escolhendoData = true },
+                ) {
+                    Text(
+                        "Pago em",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = cores.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${formatarData(pagoEm.toLocalDate())} às ${formatarHora(pagoEm)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = cores.primary,
+                    )
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = cores.primary,
+                        modifier = Modifier
+                            .padding(start = 6.dp)
+                            .size(16.dp),
+                    )
+                }
                 Text(
                     when {
                         dias > 1 -> "Pago $dias dias depois do vencimento"
@@ -417,6 +450,13 @@ internal fun DialogoPagamento(
             }) { Text("Abrir conta") }
         },
     )
+    if (escolhendoData) {
+        SeletorDataPassada(
+            inicial = pagoEm.toLocalDate(),
+            onEscolher = onAlterarData,
+            onFechar = { escolhendoData = false },
+        )
+    }
 }
 
 @Composable

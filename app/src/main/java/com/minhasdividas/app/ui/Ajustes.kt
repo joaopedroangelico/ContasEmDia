@@ -306,7 +306,8 @@ private fun SecaoPrivacidade() {
                 ) {
                     TopicoPolitica(
                         "O que fica guardado",
-                        "Somente o que você digita: dívidas, valores a receber, salário (se informado), o " +
+                        "Somente o que você digita: dívidas, gastos, valores a receber, salário e saldo da " +
+                            "conta (se informados), o " +
                             "histórico de pagamentos (dia, hora e forma de pagamento) e preferências. Tudo fica " +
                             "armazenado localmente, neste aparelho. O app não acessa nome, " +
                             "e-mail, contatos, localização, fotos ou dados bancários.",
@@ -341,7 +342,7 @@ private fun SecaoPrivacidade() {
                             "desenvolvedor (Lei nº 13.709/2018).",
                     )
                     Text(
-                        "Última atualização: 9 de outubro de 2026",
+                        "Última atualização: 23 de outubro de 2026",
                         style = MaterialTheme.typography.labelSmall,
                         color = cores.onSurfaceVariant,
                     )
