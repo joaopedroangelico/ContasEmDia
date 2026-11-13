@@ -83,7 +83,7 @@ internal fun GavetaPrevisao(
             }
         },
         titulo = "Próximos meses",
-        subtitulo = "Despesas previstas mês a mês",
+        subtitulo = "Despesas previstas",
         etiqueta = null,
         lateral = {
             if (proximo != null) {
