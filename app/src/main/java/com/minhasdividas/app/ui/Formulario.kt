@@ -47,6 +47,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -93,6 +94,8 @@ fun FolhaFormulario(
     onFechar: () -> Unit,
     onSalvar: (Divida) -> Unit,
     onExcluir: (Divida) -> Unit,
+    /** Vencimento da fatura em que entra uma compra feita hoje no cartão (null = sem sugestão). */
+    vencimentoDaFatura: (cartao: String) -> LocalDate? = { null },
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val escopo = rememberCoroutineScope()
@@ -126,6 +129,13 @@ fun FolhaFormulario(
     var tentouSalvar by rememberSaveable { mutableStateOf(false) }
     var calendarioAberto by remember { mutableStateOf(false) }
     var confirmarExclusao by remember { mutableStateOf(false) }
+    // Compra nova no cartão: o vencimento segue a fatura do cartão (fechamento) até o usuário escolher a data.
+    var vencimentoEscolhido by rememberSaveable { mutableStateOf(inicial != null) }
+    LaunchedEffect(categoria, origem) {
+        if (!vencimentoEscolhido && categoria == Categoria.CARTAO && origem.isNotBlank()) {
+            vencimentoDaFatura(origem.trim())?.let { vencimento = it.toEpochDay() }
+        }
+    }
 
     val erroDescricao = descricao.isBlank()
     val erroValor = valor <= 0
@@ -369,7 +379,10 @@ fun FolhaFormulario(
             onDismissRequest = { calendarioAberto = false },
             confirmButton = {
                 TextButton(onClick = {
-                    estado.selectedDateMillis?.let { vencimento = Math.floorDiv(it, MILIS_POR_DIA) }
+                    estado.selectedDateMillis?.let {
+                        vencimento = Math.floorDiv(it, MILIS_POR_DIA)
+                        vencimentoEscolhido = true
+                    }
                     calendarioAberto = false
                 }) { Text("OK") }
             },

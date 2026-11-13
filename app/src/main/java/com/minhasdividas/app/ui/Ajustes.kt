@@ -307,7 +307,7 @@ private fun SecaoPrivacidade() {
                     TopicoPolitica(
                         "O que fica guardado",
                         "Somente o que você digita: dívidas, gastos, valores a receber, salário (se " +
-                            "informado), o " +
+                            "informado), dias de fechamento e vencimento dos cartões, o " +
                             "histórico de pagamentos (dia, hora e forma de pagamento) e preferências. Tudo fica " +
                             "armazenado localmente, neste aparelho. O app não acessa nome, " +
                             "e-mail, contatos, localização, fotos ou dados bancários.",

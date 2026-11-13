@@ -12,6 +12,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,6 +38,12 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.rounded.DoneAll
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.EditCalendar
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,7 +76,9 @@ import com.minhasdividas.app.data.data
 import com.minhasdividas.app.data.diasAte
 import com.minhasdividas.app.data.formatarDataCurta
 import com.minhasdividas.app.data.formatarMoeda
-import com.minhasdividas.app.data.pagaNoMes
+import com.minhasdividas.app.data.ConfigCartao
+import com.minhasdividas.app.data.chaveCartao
+import com.minhasdividas.app.data.pagaNoPeriodo
 import com.minhasdividas.app.data.parcelaAtual
 import com.minhasdividas.app.data.parcelada
 import com.minhasdividas.app.data.recebidoNoMes
@@ -413,6 +422,9 @@ internal fun GavetaCategoria(
     onDesfazer: (Divida) -> Unit,
     onPagarTodas: (List<Divida>) -> Unit,
     modifier: Modifier = Modifier,
+    /** Fechamento e vencimento dos cartões (só usados na gaveta Cartão de crédito). */
+    cartoes: List<ConfigCartao> = emptyList(),
+    onSalvarCartao: (nome: String, diaFechamento: Int, diaVencimento: Int) -> Unit = { _, _, _ -> },
 ) {
     val cores = MaterialTheme.colorScheme
     val subtitulo = buildList {
@@ -455,7 +467,16 @@ internal fun GavetaCategoria(
         if (grupo.categoria == Categoria.CARTAO && grupo.dividas.any { it.origem.isNotBlank() }) {
             agruparPorCartao(grupo.dividas).forEachIndexed { i, cartao ->
                 if (i > 0) Spacer(Modifier.height(6.dp))
-                SecaoCartao(cartao, hoje, onAbrirDivida, onPagar, onDesfazer, onPagarTodas)
+                SecaoCartao(
+                    cartao,
+                    cartoes.firstOrNull { it.chave == chaveCartao(cartao.nome) },
+                    hoje,
+                    onAbrirDivida,
+                    onPagar,
+                    onDesfazer,
+                    onPagarTodas,
+                    onSalvarCartao,
+                )
             }
             return@GavetaBase
         }
@@ -489,54 +510,115 @@ internal fun GavetaCategoria(
     }
 }
 
-/** Um cartão dentro da gaveta: nome, fatura em aberto com "Pagar fatura" e as compras dele. */
+/**
+ * Um cartão dentro da gaveta: nome, fechamento/vencimento, a fatura atual com "Pagar fatura" e as compras.
+ * Com fechamento configurado, a fatura atual é a de vencimento mais próximo; compras feitas depois do
+ * fechamento já estão na seguinte e aparecem como "Próxima fatura", fora do "Pagar fatura".
+ */
 @Composable
 private fun SecaoCartao(
     cartao: Cartao,
+    config: ConfigCartao?,
     hoje: LocalDate,
     onAbrirDivida: (Divida) -> Unit,
     onPagar: (Divida, FormaPagamento?, Boolean) -> Unit,
     onDesfazer: (Divida) -> Unit,
     onPagarTodas: (List<Divida>) -> Unit,
+    onSalvarCartao: (nome: String, diaFechamento: Int, diaVencimento: Int) -> Unit,
 ) {
     val cores = MaterialTheme.colorScheme
     val nome = cartao.nome.ifEmpty { "Cartão não informado" }
-    val emAberto = cartao.dividas.filter { !it.paga && !it.pagaNoMes(hoje) }
-    val fatura = emAberto.sumOf { it.valorCentavos }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    val emAberto = cartao.dividas.filter { !it.paga && !it.pagaNoPeriodo(hoje) }
+    val vencimentoAtual = emAberto.minOfOrNull { it.vencimentoEpochDay }
+    val faturaAtual = if (config != null && vencimentoAtual != null) {
+        emAberto.filter { it.vencimentoEpochDay <= vencimentoAtual }
+    } else {
+        emAberto
+    }
+    val proximas = emAberto - faturaAtual.toSet()
+    val fatura = faturaAtual.sumOf { it.valorCentavos }
+    var configurando by remember { mutableStateOf(false) }
+
+    // Duas linhas, para nada ficar cortado em tela estreita: nome e datas em cima; fatura e botão embaixo.
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 6.dp, vertical = 4.dp)
             .background(cores.primary.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-            .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 8.dp),
     ) {
-        Icon(Icons.Rounded.CreditCard, contentDescription = null, tint = cores.primary, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(nome, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (fatura > 0) {
-                Text(
-                    "Fatura ${formatarMoeda(fatura)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = cores.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            } else {
-                Text("Fatura paga", style = MaterialTheme.typography.labelSmall, color = cores.sucesso)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.CreditCard, contentDescription = null, tint = cores.primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(nome, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (cartao.nome.isNotEmpty()) {
+                    Text(
+                        if (config != null) {
+                            "Fecha dia ${config.diaFechamento} · vence dia ${config.diaVencimento}"
+                        } else {
+                            "Definir fechamento e vencimento"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (config != null) cores.onSurfaceVariant else cores.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClickLabel = "Ajustar fechamento e vencimento") { configurando = true },
+                    )
+                }
+            }
+            if (cartao.nome.isNotEmpty()) {
+                IconButton(onClick = { configurando = true }) {
+                    Icon(
+                        Icons.Rounded.EditCalendar,
+                        contentDescription = "Fechamento e vencimento do $nome",
+                        tint = cores.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
-        if (emAberto.isNotEmpty()) {
-            BotaoEmMassa(
-                compacto = true,
-                textoBotao = "Pagar fatura",
-                tituloConfirmacao = "Pagar a fatura do $nome?",
-                textoConfirmacao = "${contar(emAberto.size, "compra será marcada como paga", "compras serão marcadas como pagas")}, " +
-                    "somando ${formatarMoeda(fatura)}. Parceladas avançam para o próximo mês. " +
-                    "Você pode desfazer logo em seguida.",
-                onConfirmar = { onPagarTodas(emAberto) },
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 30.dp)) {
+            Column(Modifier.weight(1f)) {
+                if (fatura > 0) {
+                    Text(
+                        if (config != null && vencimentoAtual != null) {
+                            "Fatura de ${formatarDataCurta(LocalDate.ofEpochDay(vencimentoAtual))}"
+                        } else {
+                            "Fatura"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cores.onSurfaceVariant,
+                    )
+                    Text(formatarMoeda(fatura), style = MaterialTheme.typography.titleSmall)
+                } else {
+                    Text("Fatura paga", style = MaterialTheme.typography.labelMedium, color = cores.sucesso)
+                }
+            }
+            if (faturaAtual.isNotEmpty()) {
+                BotaoEmMassa(
+                    compacto = true,
+                    textoBotao = "Pagar fatura",
+                    tituloConfirmacao = "Pagar a fatura do $nome?",
+                    textoConfirmacao = "${contar(faturaAtual.size, "compra será marcada como paga", "compras serão marcadas como pagas")}, " +
+                        "somando ${formatarMoeda(fatura)}. Parceladas ficam pagas até o vencimento e depois a próxima " +
+                        "parcela volta a ficar pendente. Você pode desfazer logo em seguida.",
+                    onConfirmar = { onPagarTodas(faturaAtual) },
+                )
+            }
         }
+    }
+    if (proximas.isNotEmpty()) {
+        val vencimentoProxima = LocalDate.ofEpochDay(proximas.minOf { it.vencimentoEpochDay })
+        Text(
+            "Próxima fatura (${formatarDataCurta(vencimentoProxima)}): ${formatarMoeda(proximas.sumOf { it.valorCentavos })} " +
+                "· ${contar(proximas.size, "compra", "compras")} depois do fechamento",
+            style = MaterialTheme.typography.labelSmall,
+            color = cores.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+        )
     }
     cartao.dividas.forEachIndexed { i, divida ->
         key(divida.id) {
@@ -549,6 +631,76 @@ private fun SecaoCartao(
                 onDesfazer = { onDesfazer(divida) },
                 mostrarOrigem = false,
             )
+        }
+    }
+    if (configurando) {
+        // Sem configuração ainda: vencimento sugerido pelo dia das compras em aberto, fechamento 7 dias antes.
+        val vencimentoSugerido = config?.diaVencimento
+            ?: cartao.dividas.firstOrNull { !it.paga }?.vencimento?.dayOfMonth
+            ?: 10
+        DialogoCartao(
+            nome = nome,
+            diaFechamento = config?.diaFechamento ?: ((vencimentoSugerido + 30 - 7 - 1) % 30 + 1),
+            diaVencimento = vencimentoSugerido,
+            onSalvar = { fechamento, vencimento -> onSalvarCartao(cartao.nome, fechamento, vencimento) },
+            onFechar = { configurando = false },
+        )
+    }
+}
+
+/** Fechamento e vencimento da fatura: dois dias do mês, sem mais nada. */
+@Composable
+private fun DialogoCartao(
+    nome: String,
+    diaFechamento: Int,
+    diaVencimento: Int,
+    onSalvar: (diaFechamento: Int, diaVencimento: Int) -> Unit,
+    onFechar: () -> Unit,
+) {
+    var fechamento by remember { mutableIntStateOf(diaFechamento) }
+    var vencimento by remember { mutableIntStateOf(diaVencimento) }
+    AlertDialog(
+        onDismissRequest = onFechar,
+        icon = { Icon(Icons.Rounded.EditCalendar, contentDescription = null) },
+        title = { Text(nome) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SeletorDia("Fecha no dia", fechamento) { fechamento = it }
+                SeletorDia("Vence no dia", vencimento) { vencimento = it }
+                Text(
+                    "Compras a partir do dia do fechamento entram na fatura do mês seguinte. As compras em aberto " +
+                        "deste cartão passam a vencer no dia $vencimento.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSalvar(fechamento, vencimento)
+                onFechar()
+            }) { Text("Salvar") }
+        },
+        dismissButton = { TextButton(onClick = onFechar) { Text("Cancelar") } },
+    )
+}
+
+/** Dia do mês (1 a 31) com botões − e +; passa de 31 para 1 e vice-versa. */
+@Composable
+private fun SeletorDia(rotulo: String, dia: Int, onMudar: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(rotulo, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        FilledTonalIconButton(onClick = { onMudar(if (dia <= 1) 31 else dia - 1) }) {
+            Icon(Icons.Rounded.Remove, contentDescription = "Dia anterior")
+        }
+        Text(
+            "$dia",
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(48.dp),
+        )
+        FilledTonalIconButton(onClick = { onMudar(if (dia >= 31) 1 else dia + 1) }) {
+            Icon(Icons.Rounded.Add, contentDescription = "Próximo dia")
         }
     }
 }
@@ -569,7 +721,7 @@ internal fun LinhaDivida(
 ) {
     val cores = MaterialTheme.colorScheme
     val dias = diasAte(divida.vencimento, hoje)
-    val pagaNoMes = !modoMes && divida.pagaNoMes(hoje)
+    val pagaNoMes = !modoMes && divida.pagaNoPeriodo(hoje)
     // Pergunta a forma de pagamento antes do check; a escolha vale para o pagamento que vem em seguida.
     var perguntar by remember { mutableStateOf<(() -> Unit)?>(null) }
     var escolha by remember { mutableStateOf<Pair<FormaPagamento?, Boolean>>(null to false) }

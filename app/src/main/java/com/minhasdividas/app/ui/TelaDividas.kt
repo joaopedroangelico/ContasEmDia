@@ -132,6 +132,7 @@ private const val NENHUMA = -1L
 @Composable
 fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val configsCartao by vm.cartoes.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val listState = rememberLazyListState()
@@ -264,6 +265,8 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                     onDesfazer = vm::desfazerPagamento,
                     onPagarTodas = vm::pagarTodas,
                     modifier = Modifier.animateItem(),
+                    cartoes = configsCartao,
+                    onSalvarCartao = vm::salvarCartao,
                 )
             }
             items(ui.meses, key = { chaveMes(it.mes) }) { mes ->
@@ -324,6 +327,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
                 pedirPermissaoSeNecessario()
             },
             onExcluir = vm::excluir,
+            vencimentoDaFatura = { vencimentoDaFatura(ui.todas, it, ui.hoje, configsCartao) },
         )
     }
 
@@ -353,7 +357,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
         FolhaGastoRapido(
             formaSugerida = ui.pagamentos.maxByOrNull { it.pagoEmMillis }?.forma,
             cartoes = nomesDeCartao(ui.todas),
-            vencimentoDaFatura = { vencimentoDaFatura(ui.todas, it, ui.hoje) },
+            vencimentoDaFatura = { vencimentoDaFatura(ui.todas, it, ui.hoje, configsCartao) },
             onFechar = { gastoRapidoAberto = false },
             onSalvar = vm::gastoRapido,
             onSalvarNoCartao = vm::compraNoCartao,

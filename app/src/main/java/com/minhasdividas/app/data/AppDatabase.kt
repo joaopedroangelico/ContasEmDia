@@ -67,11 +67,30 @@ val MIGRACAO_4_5 = object : Migration(4, 5) {
     }
 }
 
-@Database(entities = [Divida::class, Recebimento::class, Pagamento::class], version = 5, exportSchema = false)
+/** v6: dias de fechamento e vencimento de cada cartão. Nenhuma tabela existente muda. */
+val MIGRACAO_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `cartoes` (" +
+                "`chave` TEXT NOT NULL, " +
+                "`nome` TEXT NOT NULL, " +
+                "`diaFechamento` INTEGER NOT NULL, " +
+                "`diaVencimento` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`chave`))",
+        )
+    }
+}
+
+@Database(
+    entities = [Divida::class, Recebimento::class, Pagamento::class, ConfigCartao::class],
+    version = 6,
+    exportSchema = false,
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dividaDao(): DividaDao
     abstract fun recebimentoDao(): RecebimentoDao
     abstract fun pagamentoDao(): PagamentoDao
+    abstract fun configCartaoDao(): ConfigCartaoDao
 
     companion object {
         @Volatile
@@ -80,7 +99,7 @@ abstract class AppDatabase : RoomDatabase() {
         fun get(context: Context): AppDatabase =
             instancia ?: synchronized(this) {
                 instancia ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, NOME_BANCO)
-                    .addMigrations(MIGRACAO_1_2, MIGRACAO_2_3, MIGRACAO_3_4, MIGRACAO_4_5)
+                    .addMigrations(MIGRACAO_1_2, MIGRACAO_2_3, MIGRACAO_3_4, MIGRACAO_4_5, MIGRACAO_5_6)
                     .build()
                     .also { instancia = it }
             }

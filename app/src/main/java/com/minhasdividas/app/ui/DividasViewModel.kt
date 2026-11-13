@@ -39,6 +39,10 @@ import com.minhasdividas.app.data.desfazerRecebimento
 import com.minhasdividas.app.data.desfazerUltimoPagamento
 import com.minhasdividas.app.data.formatarData
 import com.minhasdividas.app.data.pagaNoMes
+import com.minhasdividas.app.data.pagaNoPeriodo
+import com.minhasdividas.app.data.ConfigCartao
+import com.minhasdividas.app.data.aplicarVencimento
+import com.minhasdividas.app.data.chaveCartao
 import com.minhasdividas.app.data.pagarParcela
 import com.minhasdividas.app.data.reabrir
 import com.minhasdividas.app.data.receber
@@ -156,6 +160,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = banco.dividaDao()
     private val recebimentoDao = banco.recebimentoDao()
     private val pagamentoDao = banco.pagamentoDao()
+    private val cartaoDao = banco.configCartaoDao()
     private val prefsRepo = PreferenciasRepo(app)
     private val filtro = MutableStateFlow(Filtro())
     // O mês atual já começa aberto nas abas Pagas e Todas.
@@ -164,6 +169,10 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
     private val collator = Collator.getInstance(LocaleBR).apply { strength = Collator.PRIMARY }
 
     val desfazer: Flow<Desfazer> = eventos.receiveAsFlow()
+
+    /** Fechamento e vencimento de cada cartão configurado. */
+    val cartoes: StateFlow<List<ConfigCartao>> =
+        cartaoDao.observarTodos().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val preferencias: StateFlow<Preferencias?> =
         prefsRepo.preferencias.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -216,12 +225,12 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         }
         val porMes = f.status != FiltroStatus.PENDENTES
         val grupos = if (porMes) emptyList() else ordenadas.groupBy { it.categoria }.map { (categoria, dividas) ->
-            val emAberto = dividas.filter { !it.paga && !it.pagaNoMes(hoje) }
+            val emAberto = dividas.filter { !it.paga && !it.pagaNoPeriodo(hoje) }
             Grupo(
                 categoria = categoria,
                 dividas = dividas,
                 pendentes = emAberto.size,
-                pagasNoMes = dividas.count { it.pagaNoMes(hoje) },
+                pagasNoMes = dividas.count { it.pagaNoPeriodo(hoje) },
                 quitadas = dividas.count { it.paga },
                 vencidas = emAberto.count { it.vencimentoEpochDay < hoje.toEpochDay() },
                 totalPendente = emAberto.sumOf { it.valorCentavos },
@@ -452,6 +461,20 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Guarda fechamento e vencimento do cartão [nome] e passa as compras em aberto dele para o novo dia
+     * de vencimento (no mesmo mês), para a fatura continuar uma só.
+     */
+    fun salvarCartao(nome: String, diaFechamento: Int, diaVencimento: Int) {
+        viewModelScope.launch {
+            val config = ConfigCartao(chaveCartao(nome), nome.trim(), diaFechamento, diaVencimento)
+            banco.withTransaction {
+                cartaoDao.salvar(config)
+                aplicarVencimento(dao.todas(), config).forEach { dao.salvar(it) }
+            }
+        }
+    }
+
+    /**
      * Compra no cartão de crédito feita pelo gasto rápido: o dinheiro ainda não saiu, então entra em
      * aberto na fatura do cartão e só fica paga junto com ela ("Pagar fatura").
      */
@@ -611,6 +634,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 dividas = dao.todas(),
                 pagamentos = pagamentoDao.todos(),
                 recebimentos = recebimentoDao.todos(),
+                cartoes = cartaoDao.todos(),
                 salarioCentavos = prefs.salarioCentavos,
                 desde = prefs.inicioBackup(LocalDate.now()),
                 agoraMillis = System.currentTimeMillis(),
@@ -644,9 +668,11 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 pagamentoDao.limpar()
                 dao.limpar()
                 recebimentoDao.limpar()
+                cartaoDao.limpar()
                 dao.inserirTodas(dados.dividas)
                 pagamentoDao.inserirTodos(dados.pagamentos)
                 recebimentoDao.inserirTodos(dados.recebimentos)
+                cartaoDao.inserirTodos(dados.cartoes)
             }
             prefsRepo.definirSalario(dados.salarioCentavos)
         }
@@ -677,6 +703,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 pagamentoDao.limpar()
                 dao.limpar()
                 recebimentoDao.limpar()
+                cartaoDao.limpar()
             }
             prefsRepo.definirSalario(0)
         }

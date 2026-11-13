@@ -15,6 +15,7 @@ O app guarda **somente o que você digita**:
 - histórico de pagamentos (dia e hora em que você marcou cada conta como paga, valor e forma de pagamento: PIX, boleto etc.);
 - valores a receber (renda extra);
 - salário mensal, se você informar;
+- dias de fechamento e vencimento de cada cartão de crédito, se você configurar;
 - preferências (tema, lembretes e período do backup).
 
 Tudo isso fica armazenado **localmente**, num banco de dados interno do app no seu aparelho.

@@ -54,6 +54,9 @@ private fun Divida.vencimentoDeslocado(meses: Long): LocalDate {
 
 fun Divida.proximoVencimento(): LocalDate = vencimentoDeslocado(1)
 
+/** Vencimento da parcela/conta anterior à atual (a última que foi paga, se houve pagamento). */
+fun Divida.vencimentoAnterior(): LocalDate = vencimentoDeslocado(-1)
+
 /**
  * Parcelada ou mensal fixa cuja conta deste mês já foi paga: houve pagamento e o
  * próximo vencimento já caiu num mês futuro.
@@ -61,6 +64,18 @@ fun Divida.proximoVencimento(): LocalDate = vencimentoDeslocado(1)
 fun Divida.pagaNoMes(hoje: LocalDate): Boolean =
     !paga && (recorrente || totalParcelas > 1) && parcelasPagas > 0 &&
         vencimento.isAfter(hoje.withDayOfMonth(hoje.lengthOfMonth()))
+
+/**
+ * Parcelada ou mensal fixa que conta como paga agora. No cartão de crédito, vale a fatura: depois do
+ * "Pagar fatura", fica paga até o dia do vencimento da fatura paga; no dia seguinte, a próxima parcela
+ * volta a ficar pendente. Nas demais categorias, vale o mês ([pagaNoMes]).
+ */
+fun Divida.pagaNoPeriodo(hoje: LocalDate): Boolean =
+    if (categoria == Categoria.CARTAO) {
+        !paga && (recorrente || totalParcelas > 1) && parcelasPagas > 0 && !vencimentoAnterior().isBefore(hoje)
+    } else {
+        pagaNoMes(hoje)
+    }
 
 /** Desfaz o último pagamento de parcelada/mensal fixa: volta uma parcela e um mês. */
 fun Divida.desfazerUltimoPagamento(): Divida =
@@ -97,12 +112,14 @@ fun nomesDeCartao(dividas: List<Divida>): List<String> =
     agruparPorCartao(dividas.filter { it.categoria == Categoria.CARTAO }).map { it.nome }.filter { it.isNotEmpty() }
 
 /**
- * Vencimento da próxima fatura do cartão [nome] (ignorando maiúsculas e espaços) para uma compra feita
- * em [hoje]: a fatura em aberto que vence de hoje em diante. Fatura atrasada já fechou, então a compra
- * vai para o mesmo dia de vencimento no próximo mês que ainda não passou. Null se o cartão é novo.
+ * Vencimento da fatura em que entra uma compra feita em [hoje] no cartão [nome] (ignorando maiúsculas e
+ * espaços). Com fechamento e vencimento configurados, segue o fechamento ([vencimentoParaCompra]).
+ * Sem configuração: a fatura em aberto que vence de hoje em diante; fatura atrasada já fechou, então a
+ * compra vai para o mesmo dia de vencimento no próximo mês que ainda não passou. Null se o cartão é novo.
  */
-fun vencimentoDaFatura(dividas: List<Divida>, nome: String, hoje: LocalDate): LocalDate? {
-    val chave = nome.trim().lowercase(LocaleBR)
+fun vencimentoDaFatura(dividas: List<Divida>, nome: String, hoje: LocalDate, configs: List<ConfigCartao> = emptyList()): LocalDate? {
+    val chave = chaveCartao(nome)
+    configs.firstOrNull { it.chave == chave }?.let { return it.vencimentoParaCompra(hoje) }
     val doCartao = dividas.filter { it.categoria == Categoria.CARTAO && it.origem.trim().lowercase(LocaleBR) == chave }
     doCartao.filter { !it.paga && it.vencimentoEpochDay >= hoje.toEpochDay() }
         .minOfOrNull { it.vencimentoEpochDay }

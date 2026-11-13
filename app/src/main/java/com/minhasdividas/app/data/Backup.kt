@@ -28,6 +28,8 @@ data class DadosBackup(
     val dividas: List<Divida>,
     val pagamentos: List<Pagamento>,
     val recebimentos: List<Recebimento>,
+    /** Fechamento e vencimento dos cartões (a partir da 1.7; backups antigos vêm sem). */
+    val cartoes: List<ConfigCartao> = emptyList(),
 )
 
 /**
@@ -40,13 +42,14 @@ fun montarBackup(
     dividas: List<Divida>,
     pagamentos: List<Pagamento>,
     recebimentos: List<Recebimento>,
+    cartoes: List<ConfigCartao> = emptyList(),
     salarioCentavos: Long,
     desde: LocalDate?,
     agoraMillis: Long,
     zona: ZoneId,
 ): DadosBackup {
     if (desde == null) {
-        return DadosBackup(agoraMillis, null, salarioCentavos, dividas, pagamentos, recebimentos)
+        return DadosBackup(agoraMillis, null, salarioCentavos, dividas, pagamentos, recebimentos, cartoes)
     }
     val inicio = desde.atStartOfDay(zona).toInstant().toEpochMilli()
     val noPeriodo = pagamentos.filter { it.pagoEmMillis >= inicio }
@@ -61,6 +64,7 @@ fun montarBackup(
         dividas = escolhidas,
         pagamentos = noPeriodo.filter { it.dividaId in ids },
         recebimentos = recebimentos.filter { !it.recebido || it.dataEpochDay >= desde.toEpochDay() },
+        cartoes = cartoes,
     )
 }
 
@@ -144,6 +148,7 @@ private fun DadosBackup.paraJson(): JSONObject = JSONObject()
     .put("dividas", JSONArray(dividas.map { it.paraJson() }))
     .put("pagamentos", JSONArray(pagamentos.map { it.paraJson() }))
     .put("recebimentos", JSONArray(recebimentos.map { it.paraJson() }))
+    .put("cartoes", JSONArray(cartoes.map { it.paraJson() }))
 
 private fun dadosDeJson(o: JSONObject) = DadosBackup(
     criadoEmMillis = o.getLong("criadoEm"),
@@ -152,7 +157,18 @@ private fun dadosDeJson(o: JSONObject) = DadosBackup(
     dividas = o.getJSONArray("dividas").objetos().map(::dividaDeJson),
     pagamentos = o.getJSONArray("pagamentos").objetos().map(::pagamentoDeJson),
     recebimentos = o.getJSONArray("recebimentos").objetos().map(::recebimentoDeJson),
+    cartoes = o.optJSONArray("cartoes")?.objetos()?.map(::cartaoDeJson).orEmpty(),
 )
+
+private fun ConfigCartao.paraJson() = JSONObject()
+    .put("nome", nome)
+    .put("fechamento", diaFechamento)
+    .put("vencimento", diaVencimento)
+
+private fun cartaoDeJson(o: JSONObject): ConfigCartao {
+    val nome = o.getString("nome")
+    return ConfigCartao(chaveCartao(nome), nome, o.getInt("fechamento"), o.getInt("vencimento"))
+}
 
 private fun JSONArray.objetos(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
 

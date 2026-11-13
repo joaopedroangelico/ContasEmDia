@@ -20,8 +20,8 @@ android {
         applicationId = "com.minhasdividas.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.6-beta"
+        versionCode = 11
+        versionName = "1.7-beta"
     }
 
     signingConfigs {
