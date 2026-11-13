@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Restore
@@ -160,6 +161,9 @@ fun SecaoDados(vm: DividasViewModel, preferencias: Preferencias) {
     var mesesDisponiveis by remember { mutableStateOf<List<YearMonth>?>(null) }
     var limpeza by remember { mutableStateOf<Pair<YearMonth, LimpezaMes>?>(null) }
 
+    // --- Apagar tudo: 1 = aviso, 2 = digitar APAGAR ---
+    var apagandoTudo by remember { mutableIntStateOf(0) }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.Backup, contentDescription = null, tint = cores.primary, modifier = Modifier.size(20.dp))
@@ -244,6 +248,14 @@ fun SecaoDados(vm: DividasViewModel, preferencias: Preferencias) {
             Icon(Icons.Rounded.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Apagar dados de um mês")
+        }
+        TextButton(
+            onClick = { apagandoTudo = 1 },
+            colors = ButtonDefaults.textButtonColors(contentColor = cores.error),
+        ) {
+            Icon(Icons.Rounded.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Apagar todos os dados")
         }
 
         armazenamento?.let { BlocoArmazenamento(it) }
@@ -403,6 +415,69 @@ fun SecaoDados(vm: DividasViewModel, preferencias: Preferencias) {
                 ) { Text("Continuar") }
             },
             dismissButton = { TextButton(onClick = { mesesDisponiveis = null }) { Text("Cancelar") } },
+        )
+    }
+
+    if (apagandoTudo == 1) {
+        AlertDialog(
+            onDismissRequest = { apagandoTudo = 0 },
+            icon = { Icon(Icons.Rounded.DeleteForever, contentDescription = null, tint = cores.error) },
+            title = { Text("Apagar todos os dados?") },
+            text = {
+                Text(
+                    "Apaga todas as contas, pagamentos, valores a receber e o salário. Tema, lembretes e " +
+                        "período do backup continuam. Sem um backup, não há como recuperar.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { apagandoTudo = 2 },
+                    colors = ButtonDefaults.textButtonColors(contentColor = cores.error),
+                ) { Text("Continuar") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = ::exportar) { Text("Fazer backup") }
+                    TextButton(onClick = { apagandoTudo = 0 }) { Text("Cancelar") }
+                }
+            },
+        )
+    }
+    if (apagandoTudo == 2) {
+        var confirmacao by remember { mutableStateOf("") }
+        val liberado = confirmacao.trim().equals("APAGAR", ignoreCase = true)
+        AlertDialog(
+            onDismissRequest = { apagandoTudo = 0 },
+            icon = { Icon(Icons.Rounded.DeleteForever, contentDescription = null, tint = cores.error) },
+            title = { Text("Confirme para apagar") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Digite APAGAR para confirmar.", style = MaterialTheme.typography.bodyMedium)
+                    OutlinedTextField(
+                        value = confirmacao,
+                        onValueChange = { confirmacao = it.take(10) },
+                        singleLine = true,
+                        placeholder = { Text("APAGAR") },
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = liberado,
+                    onClick = {
+                        apagandoTudo = 0
+                        escopo.launch {
+                            vm.apagarTudo()
+                            avisar(context, "Todos os dados foram apagados")
+                            versaoDados++
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = cores.error),
+                ) { Text("Apagar tudo") }
+            },
+            dismissButton = { TextButton(onClick = { apagandoTudo = 0 }) { Text("Cancelar") } },
         )
     }
 

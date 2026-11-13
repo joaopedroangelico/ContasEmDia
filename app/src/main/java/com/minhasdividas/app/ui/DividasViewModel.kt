@@ -12,11 +12,12 @@ import com.minhasdividas.app.data.LeituraBackup
 import com.minhasdividas.app.data.LimpezaMes
 import com.minhasdividas.app.data.MesHistorico
 import com.minhasdividas.app.data.Pagamento
-import com.minhasdividas.app.data.SaldoInformado
+import com.minhasdividas.app.data.MesPrevisto
+import com.minhasdividas.app.data.nomeDoMes
+import com.minhasdividas.app.data.previsaoMensal
 import com.minhasdividas.app.data.agruparPorMes
 import com.minhasdividas.app.data.contasDoMes
 import com.minhasdividas.app.data.pagoEm
-import com.minhasdividas.app.data.recebidoNoMes
 import com.minhasdividas.app.data.gerarArquivoBackup
 import com.minhasdividas.app.data.inicioBackup
 import com.minhasdividas.app.data.lerArquivoBackup
@@ -89,10 +90,6 @@ data class Resumo(
     /** Soma da parcela em atraso de cada dívida vencida. */
     val valorVencidas: Long = 0,
     val pendentes: Int = 0,
-    /** Tudo o que pesa no mês: contas já pagas neste mês + as que faltam (inclui vencidas). */
-    val contasDoMes: Long = 0,
-    /** Renda extra do mês: já recebida neste mês + a receber até o fim do mês. */
-    val extrasDoMes: Long = 0,
 )
 
 /** Uma "gaveta": as dívidas visíveis de uma categoria, com o resumo mostrado quando fechada. */
@@ -135,6 +132,8 @@ data class UiState(
     val semData: List<Divida> = emptyList(),
     /** Ids do último pagamento de cada dívida: só ele pode ser desfeito. */
     val ultimosPagamentos: Set<Long> = emptySet(),
+    /** Gráfico "Próximos meses": despesas previstas do mês atual em diante. */
+    val previsao: List<MesPrevisto> = emptyList(),
     val receber: GrupoReceber? = null,
     val abertas: Set<String> = emptySet(),
     val resumo: Resumo = Resumo(),
@@ -200,8 +199,6 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             vencidas = vencidas.size,
             valorVencidas = vencidas.sumOf { it.valorCentavos },
             pendentes = pendentes.size,
-            contasDoMes = contasDoMes(todas, pagamentos, hoje, zona),
-            extrasDoMes = extrasDoMes(recebimentos, hoje),
         )
 
         val porStatus = daCategoria.filter {
@@ -266,6 +263,7 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             receber = montarReceber(recebimentos, f, hoje),
             abertas = abertas,
             resumo = resumo,
+            previsao = previsaoMensal(todas, pagamentos, hoje, zona),
             filtro = f,
             hoje = hoje,
             carregando = false,
@@ -318,9 +316,6 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
             totalDoMes = recebimentos.sumOf { it.valorNoMes(hoje) },
         )
     }
-
-    private fun extrasDoMes(recebimentos: List<Recebimento>, hoje: LocalDate): Long =
-        recebimentos.sumOf { it.valorNoMes(hoje) }
 
     /** Quanto o recebimento soma no mês corrente. */
     private fun Recebimento.valorNoMes(hoje: LocalDate): Long {
@@ -437,7 +432,14 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             eventos.send(
-                Desfazer("Gasto “$descricao” registrado") {
+                // Em outro mês, o gasto não muda a conta deste: o aviso diz para onde ele foi.
+                Desfazer(
+                    if (YearMonth.from(data) == YearMonth.now()) {
+                        "Gasto “$descricao” registrado"
+                    } else {
+                        "Gasto “$descricao” registrado em ${nomeDoMes(YearMonth.from(data)).lowercase()}"
+                    },
+                ) {
                     viewModelScope.launch {
                         banco.withTransaction {
                             pagamentoDao.excluirPorId(idPagamento)
@@ -446,6 +448,28 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 },
             )
+        }
+    }
+
+    /**
+     * Compra no cartão de crédito feita pelo gasto rápido: o dinheiro ainda não saiu, então entra em
+     * aberto na fatura do cartão e só fica paga junto com ela ("Pagar fatura").
+     */
+    fun compraNoCartao(descricao: String, valorCentavos: Long, cartao: String, vencimento: LocalDate) {
+        abertas.update { it + Categoria.CARTAO.name }
+        viewModelScope.launch {
+            val id = dao.inserir(
+                Divida(
+                    descricao = descricao,
+                    valorCentavos = valorCentavos,
+                    vencimentoEpochDay = vencimento.toEpochDay(),
+                    categoria = Categoria.CARTAO,
+                    diaVencimento = vencimento.dayOfMonth,
+                    origem = cartao,
+                ),
+            )
+            val fatura = if (cartao.isBlank()) "à fatura" else "à fatura do $cartao"
+            eventos.send(Desfazer("“$descricao” adicionado $fatura") { viewModelScope.launch { dao.excluirPorId(id) } })
         }
     }
 
@@ -643,6 +667,21 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Ajustes → Apagar todos os dados: contas, pagamentos, valores a receber e salário. Tema, lembretes
+     * e período do backup ficam, porque são preferências do app, não informações suas.
+     */
+    suspend fun apagarTudo() {
+        withContext(Dispatchers.IO) {
+            banco.withTransaction {
+                pagamentoDao.limpar()
+                dao.limpar()
+                recebimentoDao.limpar()
+            }
+            prefsRepo.definirSalario(0)
+        }
+    }
+
     suspend fun armazenamento(): Armazenamento =
         withContext(Dispatchers.IO) { medirArmazenamento(getApplication()) }
 
@@ -658,21 +697,6 @@ class DividasViewModel(app: Application) : AndroidViewModel(app) {
 
     fun definirTema(tema: Tema) {
         viewModelScope.launch { prefsRepo.definirTema(tema) }
-    }
-
-    /**
-     * Guarda o saldo da conta agora, junto com o que já entrou de renda extra no mês: o que for
-     * recebido depois disso soma ao saldo no "Livre até o fim do mês".
-     */
-    fun definirSaldo(centavos: Long, salarioPendente: Boolean) {
-        viewModelScope.launch {
-            val recebido = recebidoNoMes(recebimentoDao.todos(), LocalDate.now())
-            prefsRepo.definirSaldo(SaldoInformado(centavos, System.currentTimeMillis(), recebido, salarioPendente))
-        }
-    }
-
-    fun removerSaldo() {
-        viewModelScope.launch { prefsRepo.definirSaldo(null) }
     }
 
     fun definirSalario(centavos: Long) {

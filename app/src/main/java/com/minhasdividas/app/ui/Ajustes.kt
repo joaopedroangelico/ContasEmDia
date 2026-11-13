@@ -306,8 +306,8 @@ private fun SecaoPrivacidade() {
                 ) {
                     TopicoPolitica(
                         "O que fica guardado",
-                        "Somente o que você digita: dívidas, gastos, valores a receber, salário e saldo da " +
-                            "conta (se informados), o " +
+                        "Somente o que você digita: dívidas, gastos, valores a receber, salário (se " +
+                            "informado), o " +
                             "histórico de pagamentos (dia, hora e forma de pagamento) e preferências. Tudo fica " +
                             "armazenado localmente, neste aparelho. O app não acessa nome, " +
                             "e-mail, contatos, localização, fotos ou dados bancários.",
@@ -332,7 +332,8 @@ private fun SecaoPrivacidade() {
                     )
                     TopicoPolitica(
                         "Apagar seus dados",
-                        "Exclua itens ou meses inteiros dentro do app, ou desinstale/limpe os dados do app nas " +
+                        "Exclua itens, meses inteiros ou tudo de uma vez (Ajustes → Apagar todos os dados), ou " +
+                            "desinstale/limpe os dados do app nas " +
                             "configurações do Android. Fora os backups que você exportar, não existe cópia fora do " +
                             "aparelho: dados apagados sem backup não podem ser recuperados.",
                     )
@@ -342,7 +343,7 @@ private fun SecaoPrivacidade() {
                             "desenvolvedor (Lei nº 13.709/2018).",
                     )
                     Text(
-                        "Última atualização: 23 de outubro de 2026",
+                        "Última atualização: 13 de novembro de 2026",
                         style = MaterialTheme.typography.labelSmall,
                         color = cores.onSurfaceVariant,
                     )

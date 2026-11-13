@@ -33,8 +33,6 @@ data class Preferencias(
     /** Início escolhido pelo usuário, usado quando [mesesBackup] é [BACKUP_DESDE_DATA]. */
     val backupDesdeEpochDay: Long = 0,
     val backupComSenha: Boolean = false,
-    /** Saldo da conta informado para o "Livre até o fim do mês". Null = nunca informado. */
-    val saldo: SaldoInformado? = null,
 )
 
 const val MINUTOS_AVISO_PADRAO = 9 * 60
@@ -78,14 +76,6 @@ class PreferenciasRepo(private val context: Context) {
             mesesBackup = p[chaveMesesBackup] ?: MESES_BACKUP_PADRAO,
             backupDesdeEpochDay = p[chaveBackupDesde] ?: 0,
             backupComSenha = p[chaveBackupSenha] ?: false,
-            saldo = p[chaveSaldo]?.let { centavos ->
-                SaldoInformado(
-                    centavos = centavos,
-                    emMillis = p[chaveSaldoEm] ?: 0,
-                    recebidoAteEntao = p[chaveSaldoRecebido] ?: 0,
-                    salarioPendente = p[chaveSaldoSalarioPendente] ?: false,
-                )
-            },
         )
     }
 
@@ -120,17 +110,16 @@ class PreferenciasRepo(private val context: Context) {
         context.dataStore.edit { it[chaveBackupSenha] = ativo }
     }
 
-    /** Null remove o saldo. */
-    suspend fun definirSaldo(saldo: SaldoInformado?) {
+    /**
+     * O "saldo da conta" (1.5) saiu na 1.6: a conta do mês passou a usar só o salário. Apaga o valor
+     * que tenha ficado guardado, para não sobrar dado que o app não usa mais.
+     */
+    suspend fun limparSaldoAntigo() {
         context.dataStore.edit {
-            if (saldo == null) {
-                it.remove(chaveSaldo)
-            } else {
-                it[chaveSaldo] = saldo.centavos
-                it[chaveSaldoEm] = saldo.emMillis
-                it[chaveSaldoRecebido] = saldo.recebidoAteEntao
-                it[chaveSaldoSalarioPendente] = saldo.salarioPendente
-            }
+            it.remove(chaveSaldo)
+            it.remove(chaveSaldoEm)
+            it.remove(chaveSaldoRecebido)
+            it.remove(chaveSaldoSalarioPendente)
         }
     }
 }

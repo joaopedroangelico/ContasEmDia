@@ -83,7 +83,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.minhasdividas.app.data.Categoria
 import com.minhasdividas.app.data.Divida
 import com.minhasdividas.app.data.PagamentoDaDivida
-import com.minhasdividas.app.data.saldoLivre
+import com.minhasdividas.app.data.resumoDoMes
+import com.minhasdividas.app.data.vencimentoDaFatura
 import com.minhasdividas.app.data.Preferencias
 import com.minhasdividas.app.data.diasAte
 import com.minhasdividas.app.data.formatarDataCurta
@@ -142,8 +143,7 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     var recebimentoId by rememberSaveable { mutableLongStateOf(NENHUMA) }
     var pagamentoId by rememberSaveable { mutableLongStateOf(NENHUMA) }
     var gastoRapidoAberto by rememberSaveable { mutableStateOf(false) }
-    var editandoSaldo by rememberSaveable { mutableStateOf(false) }
-    var vendoSaldoLivre by rememberSaveable { mutableStateOf(false) }
+    var vendoConta by rememberSaveable { mutableStateOf(false) }
     var menuAdicionar by rememberSaveable { mutableStateOf(false) }
 
     val pedirPermissao = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -170,10 +170,8 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     }
 
     val fabExpandido by remember { derivedStateOf { listState.firstVisibleItemIndex < 3 } }
-    val saldoLivre = remember(ui, preferencias.saldo, preferencias.salarioCentavos) {
-        preferencias.saldo?.let {
-            saldoLivre(it, preferencias.salarioCentavos, ui.todas, ui.pagamentos, ui.recebimentos, ui.hoje, ZoneId.systemDefault())
-        }
+    val resumoMes = remember(ui, preferencias.salarioCentavos) {
+        resumoDoMes(preferencias.salarioCentavos, ui.todas, ui.pagamentos, ui.recebimentos, ui.hoje, ZoneId.systemDefault())
     }
 
     Scaffold(
@@ -211,23 +209,23 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
         ) {
             item(key = "cabecalho") {
                 Cabecalho(
-                    salario = preferencias.salarioCentavos,
-                    extras = ui.resumo.extrasDoMes,
-                    contasDoMes = ui.resumo.contasDoMes,
-                    onEditarSalario = { editandoSalario = true },
-                    onAjustes = { ajustesAbertos = true },
-                )
-            }
-            item(key = "saldo") {
-                LinhaSaldoLivre(
-                    saldo = preferencias.saldo,
-                    livre = saldoLivre,
+                    resumo = resumoMes,
                     hoje = ui.hoje,
-                    onClick = { if (saldoLivre != null) vendoSaldoLivre = true else editandoSaldo = true },
+                    onEditarSalario = { editandoSalario = true },
+                    onVerConta = { vendoConta = true },
+                    onAjustes = { ajustesAbertos = true },
                 )
             }
             item(key = "resumo") {
                 CartaoResumo(resumo = ui.resumo, categoria = ui.filtro.categoria)
+            }
+            item(key = GAVETA_PREVISAO) {
+                GavetaPrevisao(
+                    meses = ui.previsao,
+                    salarioCentavos = preferencias.salarioCentavos,
+                    aberta = GAVETA_PREVISAO in ui.abertas,
+                    onAlternar = { vm.alternarGaveta(GAVETA_PREVISAO) },
+                )
             }
             item(key = "filtros") {
                 BarraFiltros(
@@ -354,28 +352,20 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
     if (gastoRapidoAberto) {
         FolhaGastoRapido(
             formaSugerida = ui.pagamentos.maxByOrNull { it.pagoEmMillis }?.forma,
+            cartoes = nomesDeCartao(ui.todas),
+            vencimentoDaFatura = { vencimentoDaFatura(ui.todas, it, ui.hoje) },
             onFechar = { gastoRapidoAberto = false },
             onSalvar = vm::gastoRapido,
+            onSalvarNoCartao = vm::compraNoCartao,
         )
     }
 
-    val saldoAtual = preferencias.saldo
-    if (vendoSaldoLivre && saldoAtual != null && saldoLivre != null) {
-        DialogoSaldoLivre(
-            saldo = saldoAtual,
-            livre = saldoLivre,
+    if (vendoConta) {
+        DialogoResumoMes(
+            resumo = resumoMes,
             hoje = ui.hoje,
-            onAtualizar = { editandoSaldo = true },
-            onFechar = { vendoSaldoLivre = false },
-        )
-    }
-    if (editandoSaldo) {
-        DialogoSaldo(
-            atual = saldoAtual,
-            temSalario = preferencias.salarioCentavos > 0,
-            onSalvar = vm::definirSaldo,
-            onRemover = vm::removerSaldo,
-            onFechar = { editandoSaldo = false },
+            onEditarSalario = { editandoSalario = true },
+            onFechar = { vendoConta = false },
         )
     }
 
@@ -397,73 +387,6 @@ fun TelaDividas(vm: DividasViewModel, preferencias: Preferencias) {
             onHorario = vm::definirHorarioAviso,
             secaoDados = { SecaoDados(vm, preferencias) },
         )
-    }
-}
-
-@Composable
-private fun Cabecalho(salario: Long, extras: Long, contasDoMes: Long, onEditarSalario: () -> Unit, onAjustes: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
-        Column(Modifier.weight(1f)) {
-            LinhaSalario(salario, extras, contasDoMes, onEditarSalario)
-        }
-        FilledTonalIconButton(onClick = onAjustes) {
-            Icon(Icons.Rounded.Settings, contentDescription = "Ajustes")
-        }
-    }
-}
-
-/**
- * Renda do mês (salário + renda extra) e quanto sobra depois de todas as contas do mês
- * (pagas e a pagar). Tocar abre a edição do salário.
- */
-@Composable
-private fun LinhaSalario(salario: Long, extras: Long, contasDoMes: Long, onClick: () -> Unit) {
-    val cores = MaterialTheme.colorScheme
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-        modifier = Modifier
-            .padding(bottom = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClickLabel = "Editar salário", onClick = onClick)
-            .padding(vertical = 4.dp, horizontal = 2.dp),
-    ) {
-        val renda = salario + extras
-        if (renda <= 0) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Rounded.Payments, contentDescription = null, tint = cores.primary, modifier = Modifier.size(18.dp))
-                Text("Informar salário", style = MaterialTheme.typography.titleSmall, color = cores.primary)
-            }
-            return@Row
-        }
-        val sobra = renda - contasDoMes
-        Column {
-            Text(
-                if (extras > 0) "Renda do mês" else "Salário",
-                style = MaterialTheme.typography.labelMedium,
-                color = cores.onSurfaceVariant,
-            )
-            Text(formatarMoeda(renda), style = MaterialTheme.typography.titleMedium, maxLines = 1)
-        }
-        Column {
-            Text(
-                if (sobra < 0) "Faltam no mês" else "Sobra no mês",
-                style = MaterialTheme.typography.labelMedium,
-                color = cores.onSurfaceVariant,
-            )
-            AnimatedContent(
-                targetState = sobra,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "sobra",
-            ) { valor ->
-                Text(
-                    formatarMoeda(abs(valor)),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (valor < 0) cores.error else cores.sucesso,
-                    maxLines = 1,
-                )
-            }
-        }
     }
 }
 

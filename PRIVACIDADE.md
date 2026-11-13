@@ -1,6 +1,6 @@
 # Política de Privacidade — Contas em Dia
 
-**Última atualização:** 23 de outubro de 2026
+**Última atualização:** 13 de novembro de 2026
 **Responsável:** João Pedro Angélico
 
 ## Resumo
@@ -15,7 +15,6 @@ O app guarda **somente o que você digita**:
 - histórico de pagamentos (dia e hora em que você marcou cada conta como paga, valor e forma de pagamento: PIX, boleto etc.);
 - valores a receber (renda extra);
 - salário mensal, se você informar;
-- saldo da conta, se você informar (usado só para calcular quanto fica livre até o fim do mês);
 - preferências (tema, lembretes e período do backup).
 
 Tudo isso fica armazenado **localmente**, num banco de dados interno do app no seu aparelho.
@@ -50,6 +49,7 @@ As notificações são criadas no próprio aparelho. Dependendo das configuraç�
 ## 5. Como apagar seus dados
 
 - **Excluir itens:** dentro do app, abra a dívida ou o recebimento e toque em "Excluir".
+- **Apagar tudo:** em *Ajustes → Backup e dados → Apagar todos os dados*, com confirmação, apaga contas, pagamentos, valores a receber e o salário de uma vez.
 - **Apagar um mês:** em *Ajustes → Backup e dados → Apagar dados de um mês*, remova o histórico de pagamentos daquele mês (contas em aberto, parceladas e mensais fixas continuam).
 - **Apagar tudo:** desinstale o app ou use *Configurações do Android → Apps → Contas em Dia → Armazenamento → Limpar dados*.
 

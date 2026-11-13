@@ -12,7 +12,9 @@ class DividasApp : Application() {
         super.onCreate()
         Lembretes.criarCanal(this)
         MainScope().launch {
-            val prefs = PreferenciasRepo(this@DividasApp).preferencias.first()
+            val repo = PreferenciasRepo(this@DividasApp)
+            repo.limparSaldoAntigo()
+            val prefs = repo.preferencias.first()
             Lembretes.agendar(this@DividasApp, prefs.minutosAviso)
         }
     }

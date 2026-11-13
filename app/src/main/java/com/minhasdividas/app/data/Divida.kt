@@ -3,6 +3,7 @@ package com.minhasdividas.app.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.time.LocalDate
+import java.time.YearMonth
 
 enum class Categoria(val rotulo: String) {
     CARTAO("Cartão de crédito"),
@@ -94,3 +95,24 @@ fun agruparPorCartao(dividas: List<Divida>): List<Cartao> =
 /** Nomes de cartão já usados, para sugerir no cadastro. */
 fun nomesDeCartao(dividas: List<Divida>): List<String> =
     agruparPorCartao(dividas.filter { it.categoria == Categoria.CARTAO }).map { it.nome }.filter { it.isNotEmpty() }
+
+/**
+ * Vencimento da próxima fatura do cartão [nome] (ignorando maiúsculas e espaços) para uma compra feita
+ * em [hoje]: a fatura em aberto que vence de hoje em diante. Fatura atrasada já fechou, então a compra
+ * vai para o mesmo dia de vencimento no próximo mês que ainda não passou. Null se o cartão é novo.
+ */
+fun vencimentoDaFatura(dividas: List<Divida>, nome: String, hoje: LocalDate): LocalDate? {
+    val chave = nome.trim().lowercase(LocaleBR)
+    val doCartao = dividas.filter { it.categoria == Categoria.CARTAO && it.origem.trim().lowercase(LocaleBR) == chave }
+    doCartao.filter { !it.paga && it.vencimentoEpochDay >= hoje.toEpochDay() }
+        .minOfOrNull { it.vencimentoEpochDay }
+        ?.let { return LocalDate.ofEpochDay(it) }
+    val referencia = doCartao.maxByOrNull { it.vencimentoEpochDay } ?: return null
+    val dia = if (referencia.diaVencimento > 0) referencia.diaVencimento else referencia.vencimento.dayOfMonth
+    var mes = YearMonth.from(hoje)
+    while (true) {
+        val data = mes.atDay(minOf(dia, mes.lengthOfMonth()))
+        if (!data.isBefore(hoje)) return data
+        mes = mes.plusMonths(1)
+    }
+}

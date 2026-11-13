@@ -12,12 +12,12 @@ App Android para cadastrar e acompanhar dívidas: cartão de crédito, contas me
   - **Mensal fixa**: contas sem última parcela (luz, internet, assinaturas), que se renovam todo mês.
 - **Gavetas por categoria**: cada categoria é uma seção recolhível com resumo (pendentes, pagas, total em aberto, total do mês, próxima a vencer e vencidas). Aberta, mostra o total pendente e o botão **Pagar tudo** (ex.: todas as compras de uma fatura de cartão de uma vez), com confirmação e desfazer. Vencidas aparecem em vermelho; próximas (até 3 dias), em âmbar.
 - **Forma de pagamento**: PIX, boleto, débito automático, cartão, dinheiro ou transferência. Cada conta pode ter uma forma padrão; ao pagar, ela já vem marcada e dá para trocar. O "Pagar tudo" usa a forma padrão de cada conta.
-- **Gasto rápido**: para o que já foi pago (Pix, mercado, app), basta valor e descrição. O gasto entra direto no histórico do mês, com a data e a forma de pagamento (a última usada vem marcada).
+- **Gasto rápido**: para o que já foi pago (Pix, mercado, app), basta valor e descrição. O gasto entra direto no histórico do mês, com a data e a forma de pagamento (a última usada vem marcada). Na categoria Cartão de crédito, vira uma compra na fatura do cartão escolhido (com o vencimento da fatura em aberto) e fica paga junto com ela, no "Pagar fatura".
 - **Histórico de pagamentos**: nas abas **Pagas** e **Todas**, as contas ficam em gavetas por mês, pelo mês em que foram pagas. Cada pagamento mostra o vencimento, a forma e o dia/hora do pagamento (em âmbar quando foi pago com atraso); tocar abre os detalhes, onde dá para corrigir o dia do pagamento e a forma. Em **Todas**, as contas em aberto entram no mês em que vencem, e o mês ganha um ✓ quando tudo dele foi pago.
 - **Fatura por cartão**: na gaveta Cartão de crédito, as compras ficam separadas por cartão (Nubank, Inter...), cada um com a fatura em aberto e o botão **Pagar fatura**.
 - **A receber**: renda extra fora do salário (freela, venda, reembolso), única ou "todo mês", numa gaveta própria.
-- **Salário e sobra**: informe o salário líquido e o app mostra quanto sobra no fim do mês (salário + renda extra − contas do mês). As contas do mês são o que foi realmente pago no mês (pelo histórico) mais o que falta pagar até o fim dele.
-- **Livre até o fim do mês**: informe o saldo da conta e o app mostra quanto fica livre (saldo + a receber − a pagar até o fim do mês). O que você marcar como pago ou recebido depois de informar o saldo já entra na conta; tocar mostra o cálculo linha por linha.
+- **Conta do mês**: a sobra recomeça todo dia 1º, só com o salário do mês: salário + renda extra recebida no mês − pago no mês (inclui gastos rápidos) − a pagar até o fim do mês (inclui vencidas). Nada do mês anterior entra. Tocar no valor mostra a conta linha por linha.
+- **Próximos meses**: gráfico de colunas com as despesas previstas mês a mês (mensais fixas, parcelas restantes e contas à vista), com o salário como linha de referência; tocar numa coluna mostra as contas daquele mês.
 - **Botão "+"** expansível com as opções "Nova dívida", "Gasto rápido" e "A receber".
 - **Marcar como paga/recebido**: o círculo fica verde com um check antes da lista mudar. Parceladas e mensais fixas avançam o vencimento um mês, mantendo o dia original (31 → 28/02 → 31/03); a última parcela quita a dívida. Toda ação pode ser desfeita pela barra inferior.
 - **Resumo** no topo: pendente no mês (inclui vencidas), total restante e vencidas (quantidade e valor somado).
@@ -25,6 +25,7 @@ App Android para cadastrar e acompanhar dívidas: cartão de crédito, contas me
 - **Lembretes**: notificação diária, no horário escolhido (padrão 9h), para dívidas que vencem no dia ou em 1, 3, 5 ou 7 dias. O aviso se repete todo dia, inclusive depois do vencimento, até a conta ser paga. O som segue o padrão do sistema e pode ser trocado em Ajustes.
 - **Backup**: exporta um arquivo com os dados dos últimos 3, 6 ou 12 meses, de tudo ou a partir de uma data escolhida, opcionalmente protegido com senha (AES-256), e salva onde você escolher. A importação restaura tudo a partir do arquivo.
 - **Apagar um mês**: remove o histórico de pagamentos de um mês escolhido, sem mexer em contas em aberto, parceladas ou mensais fixas.
+- **Apagar todos os dados**: em Ajustes, com confirmação dupla e a opção de fazer backup antes.
 - **Armazenamento**: Ajustes mostra o espaço livre do celular, quanto o app ocupa e quanto disso são as suas informações (MB e %).
 - **Temas**: Sistema, Lavanda, Menta, Pêssego, Oceano e Rosé. Todos seguem o modo claro/escuro do celular.
 
@@ -32,7 +33,7 @@ App Android para cadastrar e acompanhar dívidas: cartão de crédito, contas me
 
 ## Desenvolvimento futuro
 
-- **Gráficos**: gastos por mês, divisão por categoria e renda × contas, a partir do histórico de pagamentos.
+- **Gráficos**: divisão por categoria e renda × contas, a partir do histórico de pagamentos (o de próximos meses já existe).
 - **Integração com a agenda**: botão "Adicionar à agenda" em cada conta, abrindo o Google Agenda (ou a agenda do celular) já preenchido para você confirmar. A sincronização automática foi descartada: levaria nomes e valores das contas para fora do aparelho.
 
 Hoje os lembretes não dependem de agenda: usam o WorkManager do Android, que guarda o agendamento no próprio celular e o refaz sozinho depois que o aparelho reinicia ou desliga de repente (o aviso chega quando o celular volta a ligar).

@@ -14,6 +14,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CreditCard
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -52,13 +54,19 @@ private const val MILIS_POR_DIA = 86_400_000L
 /**
  * Gasto que já saiu da conta (Pix, mercado, app): valor e descrição bastam. Nasce paga, direto no
  * histórico do mês. [formaSugerida] é a forma do último pagamento registrado.
+ *
+ * Na categoria Cartão de crédito o dinheiro ainda não saiu: vira uma compra em aberto na fatura do
+ * cartão (vencimento da fatura em aberto dele, [vencimentoDaFatura]), e só fica paga no "Pagar fatura".
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FolhaGastoRapido(
     formaSugerida: FormaPagamento?,
+    cartoes: List<String>,
+    vencimentoDaFatura: (cartao: String) -> LocalDate?,
     onFechar: () -> Unit,
     onSalvar: (descricao: String, valorCentavos: Long, data: LocalDate, categoria: Categoria, forma: FormaPagamento?) -> Unit,
+    onSalvarNoCartao: (descricao: String, valorCentavos: Long, cartao: String, vencimento: LocalDate) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val escopo = rememberCoroutineScope()
@@ -69,8 +77,17 @@ fun FolhaGastoRapido(
     var data by rememberSaveable { mutableLongStateOf(hoje.toEpochDay()) }
     var categoria by rememberSaveable { mutableStateOf(Categoria.OUTROS) }
     var forma by rememberSaveable { mutableStateOf(formaSugerida) }
+    var cartao by rememberSaveable { mutableStateOf(cartoes.firstOrNull() ?: "") }
+    // Vencimento da fatura: segue o cartão escolhido até o usuário mudar a data à mão.
+    var vencimentoManual by rememberSaveable { mutableStateOf<Long?>(null) }
     var tentouSalvar by rememberSaveable { mutableStateOf(false) }
     var calendarioAberto by remember { mutableStateOf(false) }
+    var calendarioFatura by remember { mutableStateOf(false) }
+
+    val noCartao = categoria == Categoria.CARTAO
+    val vencimento = vencimentoManual?.let(LocalDate::ofEpochDay)
+        ?: vencimentoDaFatura(cartao.trim())
+        ?: hoje.plusMonths(1)
 
     val erroDescricao = descricao.isBlank()
     val erroValor = valor <= 0
@@ -79,7 +96,11 @@ fun FolhaGastoRapido(
         tentouSalvar = true
         if (erroDescricao || erroValor) return
         escopo.launch { sheetState.hide() }.invokeOnCompletion {
-            onSalvar(descricao.trim(), valor, LocalDate.ofEpochDay(data), categoria, forma)
+            if (noCartao) {
+                onSalvarNoCartao(descricao.trim(), valor, cartao.trim(), vencimento)
+            } else {
+                onSalvar(descricao.trim(), valor, LocalDate.ofEpochDay(data), categoria, forma)
+            }
             onFechar()
         }
     }
@@ -101,7 +122,11 @@ fun FolhaGastoRapido(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Gasto rápido", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "Para o que já foi pago: entra direto no histórico do mês.",
+                    if (noCartao) {
+                        "Compra no cartão: entra na fatura e fica paga junto com ela, no “Pagar fatura”."
+                    } else {
+                        "Para o que já foi pago: entra direto no histórico do mês."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -129,13 +154,6 @@ fun FolhaGastoRapido(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            CampoData(rotulo = "Data do pagamento", data = LocalDate.ofEpochDay(data), onClick = { calendarioAberto = true })
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Forma de pagamento", style = MaterialTheme.typography.titleSmall)
-                SeletorForma(forma) { forma = it }
-            }
-
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Categoria", style = MaterialTheme.typography.titleSmall)
                 FlowRow(
@@ -154,6 +172,45 @@ fun FolhaGastoRapido(
                 }
             }
 
+            if (noCartao) {
+                OutlinedTextField(
+                    value = cartao,
+                    onValueChange = { cartao = it.take(40) },
+                    label = { Text("Cartão") },
+                    placeholder = { Text("Ex.: Nubank, Inter, Itaú") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (cartoes.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        cartoes.forEach { nome ->
+                            FilterChip(
+                                selected = cartao.trim().equals(nome, ignoreCase = true),
+                                onClick = {
+                                    cartao = nome
+                                    vencimentoManual = null
+                                },
+                                label = { Text(nome) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.CreditCard, contentDescription = null, modifier = Modifier.size(16.dp))
+                                },
+                                shape = CircleShape,
+                            )
+                        }
+                    }
+                }
+                CampoData(rotulo = "Vencimento da fatura", data = vencimento, onClick = { calendarioFatura = true })
+            } else {
+                CampoData(rotulo = "Data do pagamento", data = LocalDate.ofEpochDay(data), onClick = { calendarioAberto = true })
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Forma de pagamento", style = MaterialTheme.typography.titleSmall)
+                    SeletorForma(forma) { forma = it }
+                }
+            }
+
             Button(
                 onClick = ::salvar,
                 shape = RoundedCornerShape(18.dp),
@@ -161,11 +218,19 @@ fun FolhaGastoRapido(
                     .fillMaxWidth()
                     .height(54.dp),
             ) {
-                Text("Registrar gasto", style = MaterialTheme.typography.titleMedium)
+                Text(if (noCartao) "Adicionar à fatura" else "Registrar gasto", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
 
+    if (calendarioFatura) {
+        SeletorDataPassada(
+            inicial = vencimento,
+            ateHoje = false,
+            onEscolher = { vencimentoManual = it.toEpochDay() },
+            onFechar = { calendarioFatura = false },
+        )
+    }
     if (calendarioAberto) {
         SeletorDataPassada(
             inicial = LocalDate.ofEpochDay(data),
@@ -175,15 +240,20 @@ fun FolhaGastoRapido(
     }
 }
 
-/** Calendário que só deixa escolher até hoje (datas de pagamento não podem estar no futuro). */
+/** Calendário; com [ateHoje], só deixa escolher até hoje (datas de pagamento não podem estar no futuro). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SeletorDataPassada(inicial: LocalDate, onEscolher: (LocalDate) -> Unit, onFechar: () -> Unit) {
+internal fun SeletorDataPassada(
+    inicial: LocalDate,
+    onEscolher: (LocalDate) -> Unit,
+    onFechar: () -> Unit,
+    ateHoje: Boolean = true,
+) {
     val hoje = LocalDate.now().toEpochDay()
     val estado = rememberDatePickerState(
         initialSelectedDateMillis = inicial.toEpochDay() * MILIS_POR_DIA,
         selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long) = Math.floorDiv(utcTimeMillis, MILIS_POR_DIA) <= hoje
+            override fun isSelectableDate(utcTimeMillis: Long) = !ateHoje || Math.floorDiv(utcTimeMillis, MILIS_POR_DIA) <= hoje
         },
     )
     DatePickerDialog(

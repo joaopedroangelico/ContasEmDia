@@ -1,9 +1,9 @@
 package com.minhasdividas.app.data
 
-import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /** Um pagamento com a dívida a que pertence (para mostrar descrição, categoria e parcelas). */
 data class PagamentoDaDivida(val pagamento: Pagamento, val divida: Divida)
@@ -130,55 +130,107 @@ fun recebidoNoMes(recebimentos: List<Recebimento>, hoje: LocalDate): Long {
     }
 }
 
-/** Saldo da conta informado pelo usuário, com o que já tinha entrado no mês naquele momento. */
-data class SaldoInformado(
-    val centavos: Long,
-    val emMillis: Long,
-    /** [recebidoNoMes] no momento em que o saldo foi informado. */
-    val recebidoAteEntao: Long,
-    /** O salário deste mês ainda não tinha caído na conta. */
-    val salarioPendente: Boolean,
-)
-
-/** As parcelas do "Livre até o fim do mês", para mostrar de onde vem o valor. */
-data class SaldoLivre(
-    val saldoInformado: Long,
-    /** Pago no app depois de informar o saldo (já saiu da conta). */
-    val pagoDepois: Long,
-    /** Recebido no app depois de informar o saldo (já entrou na conta). */
-    val recebidoDepois: Long,
-    val aReceber: Long,
+/**
+ * A conta do mês, que recomeça todo dia 1º: só o salário do mês + o que entrou de extra nele, menos
+ * o que foi pago nele e o que falta pagar até o fim dele. Nada do mês anterior (saldo, sobra ou
+ * valores a receber atrasados) entra; contas vencidas e não pagas, sim, porque ainda vão sair.
+ */
+data class ResumoMes(
     val salario: Long,
+    /** Renda extra marcada como recebida neste mês. */
+    val recebido: Long,
+    /** Renda extra prevista até o fim do mês e ainda não recebida (só informativo: não entra na sobra). */
+    val aReceber: Long,
+    /** Pago neste mês, pelo histórico (inclui gastos rápidos). */
+    val pago: Long,
+    /** Em aberto com vencimento até o fim do mês, inclusive vencidas. */
     val aPagar: Long,
 ) {
-    val livre: Long get() = saldoInformado - pagoDepois + recebidoDepois + aReceber + salario - aPagar
+    val renda: Long get() = salario + recebido
+    val sobra: Long get() = renda - pago - aPagar
 }
 
-/**
- * Quanto fica livre até o fim do mês: saldo informado + o que ainda vai entrar − o que ainda vai sair.
- * O que foi marcado como pago ou recebido DEPOIS de informar o saldo já mexeu no dinheiro real, então
- * ajusta o saldo. Null quando o saldo é de um mês anterior (precisa ser informado de novo).
- */
-fun saldoLivre(
-    saldo: SaldoInformado,
+/** O que falta pagar da dívida até o fim do mês de [hoje] (inclui vencidas). */
+private fun Divida.aPagarNoMes(hoje: LocalDate): Long =
+    if (!paga && vencimentoEpochDay <= YearMonth.from(hoje).atEndOfMonth().toEpochDay()) valorCentavos else 0L
+
+fun resumoDoMes(
     salarioCentavos: Long,
     dividas: List<Divida>,
     pagamentos: List<Pagamento>,
     recebimentos: List<Recebimento>,
     hoje: LocalDate,
     zona: ZoneId,
-): SaldoLivre? {
-    val mes = YearMonth.from(hoje)
-    val informadoEm = Instant.ofEpochMilli(saldo.emMillis).atZone(zona).toLocalDate()
-    if (YearMonth.from(informadoEm) != mes) return null
-    val fim = mes.atEndOfMonth().toEpochDay()
+): ResumoMes {
+    val porDivida = pagamentos.groupBy { it.dividaId }
+    val fim = YearMonth.from(hoje).atEndOfMonth().toEpochDay()
+    var pago = 0L
+    var aPagar = 0L
+    dividas.forEach { d ->
+        val falta = d.aPagarNoMes(hoje)
+        aPagar += falta
+        pago += d.pesoNoMes(porDivida[d.id].orEmpty(), hoje, zona) - falta
+    }
+    return ResumoMes(
+        salario = salarioCentavos,
+        recebido = recebidoNoMes(recebimentos, hoje),
+        aReceber = recebimentos
+            .filter { !it.recebido && !it.recebidoNoMes(hoje) && it.dataEpochDay <= fim }
+            .sumOf { it.valorCentavos },
+        pago = pago,
+        aPagar = aPagar,
+    )
+}
 
-    val pagoDepois = pagamentos.filter { it.pagoEmMillis > saldo.emMillis }.sumOf { it.valorCentavos }
-    val recebidoDepois = recebidoNoMes(recebimentos, hoje) - saldo.recebidoAteEntao
-    val aPagar = dividas.filter { !it.paga && it.vencimentoEpochDay <= fim }.sumOf { it.valorCentavos }
-    val aReceber = recebimentos
-        .filter { !it.recebido && !it.recebidoNoMes(hoje) && it.dataEpochDay <= fim }
-        .sumOf { it.valorCentavos }
-    val salario = if (saldo.salarioPendente) salarioCentavos else 0L
-    return SaldoLivre(saldo.centavos, pagoDepois, recebidoDepois, aReceber, salario, aPagar)
+/** Uma coluna do gráfico "Próximos meses". */
+data class MesPrevisto(
+    val mes: YearMonth,
+    /** Cada conta com quanto pesa no mês, da maior para a menor. */
+    val contas: List<Pair<Divida, Long>>,
+    /** Parte já paga (só no mês atual). */
+    val jaPago: Long,
+) {
+    val total: Long get() = contas.sumOf { it.second }
+}
+
+/**
+ * Despesas previstas mês a mês, a partir do mês de [hoje]. O mês atual é a conta do mês (pago +
+ * a pagar). Nos seguintes: mensais fixas todo mês, parceladas uma parcela por mês até acabar e à
+ * vista no mês do vencimento. O que está atrasado entra no mês atual e as parcelas seguintes vêm
+ * em fila, uma por mês, já que é assim que vão ser pagas.
+ */
+fun previsaoMensal(
+    dividas: List<Divida>,
+    pagamentos: List<Pagamento>,
+    hoje: LocalDate,
+    zona: ZoneId,
+    meses: Int = 12,
+): List<MesPrevisto> {
+    val atual = YearMonth.from(hoje)
+    val porDivida = pagamentos.groupBy { it.dividaId }
+    val porMes = List(meses) { mutableListOf<Pair<Divida, Long>>() }
+    var jaPago = 0L
+
+    dividas.forEach { d ->
+        val peso = d.pesoNoMes(porDivida[d.id].orEmpty(), hoje, zona)
+        if (peso > 0) porMes[0] += d to peso
+        jaPago += peso - d.aPagarNoMes(hoje)
+        if (d.paga) return@forEach
+
+        // Primeiro mês em que a conta ainda vai pesar (atrasada = mês atual).
+        val inicio = maxOf(0L, ChronoUnit.MONTHS.between(atual, YearMonth.from(d.vencimento))).toInt()
+        val quantas = when {
+            d.recorrente -> meses
+            else -> d.totalParcelas - d.parcelasPagas
+        }
+        for (i in 0 until quantas) {
+            val k = inicio + i
+            if (k >= meses) break
+            if (k == 0) continue // o mês atual já foi contado pela conta do mês
+            porMes[k] += d to d.valorCentavos
+        }
+    }
+    return porMes.mapIndexed { k, contas ->
+        MesPrevisto(atual.plusMonths(k.toLong()), contas.sortedByDescending { it.second }, if (k == 0) jaPago else 0L)
+    }
 }
